@@ -1,14 +1,24 @@
+===========decentralized chat=================
+
+
+
+
+
+
+
+
+
 <!DOCTYPE html>
 <html lang="en" class="h-full bg-gray-900">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>D-Chat | Decentralized Chat</title>
-    
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js" rel="noopener noreferrer"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js" rel="noopener noreferrer"></script>
+    <!-- Gun.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+    <!-- NOTE: CryptoJS removed. We now use Web Crypto API with PBKDF2 for key wrapping. -->
 
     <style>
 /* --- Color Palette Definitions --- */
@@ -51,14 +61,6 @@ html, body {
     color: var(--color-text-light) !important;
     box-sizing: border-box;
     overflow: hidden;
-    /* Prevent Tailwind base styles from overriding our theme */
-    background: var(--color-bg-primary) !important;
-    color: var(--color-text-light) !important;
-}
-
-body.chat-open {
-    /* Used for mobile view to lock scroll */
-    overflow: hidden;
 }
 
 *, *::before, *::after { box-sizing: inherit; }
@@ -74,14 +76,8 @@ body.chat-open {
 }
 
 #auth-page h1 {
-    color: var(--color-text-light) !important;
+    color: #FFFFFF !important;
     font-size: 1.875rem !important;
-}
-.light #auth-page h1 {
-    color: var(--color-text-light) !important;
-}
-#auth-page p {
-    color: var(--color-text-muted) !important;
 }
 
 /* Tabs */
@@ -91,9 +87,13 @@ body.chat-open {
     border-bottom: 2px solid transparent !important; 
     transition: all 0.2s ease;
 }
-.flex.border-b button.active-tab {
+#tab-login { /* Active Tab */
     color: var(--color-text-light) !important;
     border-bottom-color: var(--color-accent-primary) !important;
+}
+#tab-signup {
+    /* Ensure only the active tab shows the indigo bottom border */
+    border-color: transparent !important;
 }
 
 /* Form Inputs */
@@ -110,19 +110,14 @@ body.chat-open {
 }
 
 /* Primary Buttons */
-button[type="submit"], #new-chat-button, #message-form button[type="submit"] {
+button[type="submit"], #new-chat-button {
     background-color: var(--color-accent-primary) !important;
     color: #FFFFFF !important;
     transition: background-color 0.2s;
 }
-button[type="submit"]:hover, #new-chat-button:hover, #message-form button[type="submit"]:hover {
+button[type="submit"]:hover, #new-chat-button:hover {
     background-color: var(--color-accent-dark) !important;
 }
-button[type="submit"]:disabled, #message-form button[type="submit"]:disabled {
-    background-color: var(--color-border) !important;
-    cursor: not-allowed;
-}
-
 
 /* Secondary Button (Modal Cancel) */
 #cancel-new-chat { 
@@ -135,57 +130,12 @@ button[type="submit"]:disabled, #message-form button[type="submit"]:disabled {
 }
 
 /* 3. Chat Layout & Sidebar */
-#chat-page > div.flex { display: flex; height: 100%; position: relative; }
+#chat-page > div.flex { display: flex; height: 100%; }
 
-/* Sidebar Container */
-#sidebar { 
+.flex-col.w-full { /* Sidebar Container */
     background-color: var(--color-bg-secondary) !important;
     border-right: 1px solid var(--color-border) !important;
-    /* Mobile styles */
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    z-index: 10;
-    transition: transform 0.3s ease-in-out;
 }
-/* Main Chat Area */
-#main-chat { 
-    background-color: var(--color-bg-primary) !important;
-    /* Mobile styles */
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    z-index: 5;
-    transform: translateX(100%);
-    transition: transform 0.3s ease-in-out;
-}
-
-/* Mobile responsive view */
-body.chat-open #sidebar {
-    transform: translateX(-100%);
-}
-body.chat-open #main-chat {
-    transform: translateX(0%);
-}
-
-/* Desktop view */
-@media (min-width: 768px) {
-    #sidebar {
-        position: relative;
-        width: 33.333333%; /* md:w-1/3 */
-        transform: translateX(0);
-    }
-    #main-chat {
-        position: relative;
-        width: 66.666667%; /* flex-1 */
-        transform: translateX(0);
-    }
-}
-@media (min-width: 1024px) {
-    #sidebar { width: 25%; } /* lg:w-1/4 */
-    #main-chat { width: 75%; }
-}
-
 
 /* Header/Footer Bars */
 .flex-shrink-0.h-16 {
@@ -195,23 +145,18 @@ body.chat-open #main-chat {
 
 #user-avatar, #chat-partner-avatar {
     background-color: var(--color-accent-dark) !important;
+    /* Use a fixed, professional avatar size */
     width: 36px !important; 
     height: 36px !important;
 }
 
-#logout-button, #theme-toggle { color: var(--color-text-muted) !important; }
-#logout-button:hover, #theme-toggle:hover { color: var(--color-text-light) !important; }
+#logout-button { color: var(--color-text-muted) !important; }
+#logout-button:hover { color: var(--color-text-light) !important; }
 
-/* Mobile back button */
-#back-to-contacts { display: block; }
-@media (min-width: 768px) {
-    #back-to-contacts { display: none; }
-}
-
-
-/* Contacts List Items */
+/* Contacts List Items (You need to update your JS to inject .contact-item class) */
 #contacts-list { overflow-y: auto; }
 
+/* Placeholder for JS-injected contact item */
 .contact-item { 
     display: flex; align-items: center; padding: 1rem; cursor: pointer; 
     border-bottom: 1px solid var(--color-border); 
@@ -221,14 +166,18 @@ body.chat-open #main-chat {
 .contact-item.active { /* Active Chat */
     background-color: var(--color-bg-card) !important;
     border-left: 3px solid var(--color-accent-primary);
-    /* Compensate for border width */
-    padding-left: calc(1rem - 3px); 
+    margin-left: -3px; /* Compensate for border width */
 }
 .contact-item p { color: var(--color-text-light) !important; }
 .contact-item p.text-sm { color: var(--color-text-muted) !important; }
 
 /* 4. Main Chat Area */
+.flex-1.flex.flex-col { /* Main chat container */
+    background-color: var(--color-bg-primary) !important;
+}
+
 #chat-welcome {
+    /* Adjust welcome state text colors */
     color: var(--color-text-muted) !important;
 }
 #chat-welcome h2 {
@@ -241,134 +190,114 @@ body.chat-open #main-chat {
     border-top: 1px solid var(--color-border) !important;
 }
 
-/* Message Bubbles */
+/* Message Bubbles (Requires JS to inject .message-row, .message-bubble.sent/received) */
 #chat-messages { overflow-y: auto; }
 
+/* Placeholder for JS-injected message row */
 .message-row { 
     display: flex; margin-bottom: 0.5rem; 
     align-items: flex-end; /* Align sender/time to the bottom */
 }
-.message-row.sent { justify-content: flex-end; }
-.message-row.received { justify-content: flex-start; }
 
+/* Placeholder for JS-injected message bubble */
 .message-bubble { 
     max-width: 65%; /* Wider bubbles for modern look */
     padding: 0.75rem 1rem; 
     border-radius: 18px; 
     box-shadow: 0 1px 1px rgba(0, 0, 0, 0.15); 
     word-wrap: break-word;
-    display: flex;
-    flex-direction: column;
 }
 
 .message-bubble.sent {
     background-color: var(--color-accent-primary) !important; /* Blue accent */
     color: #FFFFFF !important;
+    margin-left: auto;
     border-bottom-right-radius: 8px; /* Tail effect */
 }
 .message-bubble.received {
     background-color: var(--color-bg-card) !important; /* Dark card color */
     color: var(--color-text-light) !important;
+    margin-right: auto;
     border-bottom-left-radius: 8px; /* Tail effect */
 }
 
 .message-time { 
     color: rgba(201, 209, 217, 0.5); /* Semi-transparent muted text */
     font-size: 0.7rem; 
-    margin-top: 4px;
-}
-.message-bubble.sent .message-time {
-    color: rgba(255, 255, 255, 0.7);
+    margin: 0 8px;
     align-self: flex-end;
 }
-.message-bubble.received .message-time {
-    color: var(--color-text-muted);
-    opacity: 0.7;
-    align-self: flex-start;
-}
-
 
 /* 5. Scrollbar Refinement */
 #chat-messages::-webkit-scrollbar,
-#contacts-list::-webkit-scrollbar,
-.emoji-grid::-webkit-scrollbar { width: 8px; height: 8px; }
+#contacts-list::-webkit-scrollbar { width: 8px; height: 8px; }
 #chat-messages::-webkit-scrollbar-track,
-#contacts-list::-webkit-scrollbar-track,
-.emoji-grid::-webkit-scrollbar-track { background: var(--color-bg-secondary); }
+#contacts-list::-webkit-scrollbar-track { background: var(--color-bg-secondary); }
 #chat-messages::-webkit-scrollbar-thumb,
-#contacts-list::-webkit-scrollbar-thumb,
-.emoji-grid::-webkit-scrollbar-thumb { 
+#contacts-list::-webkit-scrollbar-thumb { 
     background: var(--color-border); /* Subtle thumb color */
     border-radius: 4px; 
 }
 #chat-messages::-webkit-scrollbar-thumb:hover,
-#contacts-list::-webkit-scrollbar-thumb:hover,
-.emoji-grid::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+#contacts-list::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
 
 /* Utility Overrides */
 .hidden { display: none !important; }
 
-/* Emoji picker styles */
-.emoji-button {
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    font-size: 20px;
-    width: 40px;
-    height: 40px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-text-light);
-}
-#emoji-picker {
-    position: absolute;
-    bottom: 72px; /* sits above the input area */
-    right: 24px;
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    padding: 8px;
-    border-radius: 8px;
-    display: none;
-    width: 260px;
-    max-width: calc(100% - 48px);
-    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-    z-index: 60;
-}
-.emoji-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
-    gap: 6px;
-    max-height: 220px;
-    overflow-y: auto;
-}
-.emoji-cell {
-    font-size: 1.25rem;
-    padding: 6px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 6px;
-    border: none;
-    background: transparent;
-    color: var(--color-text-light); /* Ensure emoji color */
-}
-.emoji-cell:hover {
-    background: var(--color-bg-secondary);
-}
-
-/* Theme Icons */
-#theme-icon .sun { display: none; }
-#theme-icon .moon { display: block; }
-.light #theme-icon .sun { display: block; }
-.light #theme-icon .moon { display: none; }
+ /* Emoji picker styles */
+ .emoji-button {
+     background: transparent;
+     border: none;
+     cursor: pointer;
+     font-size: 20px;
+     width: 40px;
+     height: 40px;
+     display: inline-flex;
+     align-items: center;
+     justify-content: center;
+     color: var(--color-text-light);
+ }
+ #emoji-picker {
+     position: absolute;
+     bottom: 72px; /* sits above the input area */
+     right: 24px;
+     background: var(--color-bg-card);
+     border: 1px solid var(--color-border);
+     padding: 8px;
+     border-radius: 8px;
+     display: none;
+     width: 260px;
+     max-width: calc(100% - 48px);
+     box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+     z-index: 60;
+ }
+ .emoji-grid {
+     display: grid;
+     grid-template-columns: repeat(8, 1fr);
+     gap: 6px;
+     max-height: 220px;
+     overflow: auto;
+ }
+ .emoji-cell {
+     font-size: 1.25rem;
+     padding: 6px;
+     cursor: pointer;
+     display: flex;
+     align-items: center;
+     justify-content: center;
+     border-radius: 6px;
+ }
+ .emoji-cell:hover {
+     background: var(--color-bg-secondary);
+ }
     </style>
 </head>
 <body class="h-full font-sans text-gray-200 antialiased">
 
+    <!-- Main Application Container -->
     <div id="app-container" class="h-full">
 
+        <!-- ===== Auth Page ===== -->
         <div id="auth-page" class="flex items-center justify-center h-full p-4">
             <div class="w-full max-w-md bg-gray-800 rounded-2xl shadow-lg p-8">
                 <h1 class="text-3xl font-bold text-center text-white mb-2">
@@ -376,8 +305,9 @@ body.chat-open #main-chat {
                 </h1>
                 <p class="text-center text-gray-400 mb-6">Decentralized & Encrypted</p>
 
+                <!-- Tabs -->
                 <div class="flex border-b border-gray-700 mb-6">
-                    <button id="tab-login" class="flex-1 py-2 font-semibold text-white border-b-2 border-indigo-500 active-tab">
+                    <button id="tab-login" class="flex-1 py-2 font-semibold text-white border-b-2 border-indigo-500">
                         Login
                     </button>
                     <button id="tab-signup" class="flex-1 py-2 font-semibold text-gray-500">
@@ -385,7 +315,9 @@ body.chat-open #main-chat {
                     </button>
                 </div>
 
+                <!-- Auth Forms -->
                 <div id="auth-forms">
+                    <!-- Login Form -->
                     <form id="login-form" class="space-y-4">
                         <div>
                             <label for="login-username" class="block text-sm font-medium text-gray-300">Username</label>
@@ -400,6 +332,7 @@ body.chat-open #main-chat {
                         </button>
                     </form>
 
+                    <!-- Signup Form -->
                     <form id="signup-form" class="space-y-4 hidden">
                         <div>
                             <label for="signup-username" class="block text-sm font-medium text-gray-300">Username</label>
@@ -419,10 +352,12 @@ body.chat-open #main-chat {
             </div>
         </div>
 
+        <!-- ===== Chat Page ===== -->
         <div id="chat-page" class="hidden h-full">
             <div class="flex h-full">
-                
-                <div id="sidebar" class="flex flex-col w-full md:w-1/3 lg:w-1/4 h-full bg-gray-800 border-r border-gray-700">
+                <!-- Sidebar (Contacts List) -->
+                <div class="flex flex-col w-full md:w-1/3 lg:w-1/4 h-full bg-gray-800 border-r border-gray-700">
+                    <!-- Sidebar Header -->
                     <div class="flex items-center justify-between p-4 border-b border-gray-700 h-16 flex-shrink-0">
                         <div class="flex items-center space-x-2">
                             <div id="user-avatar" class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold text-white"></div>
@@ -430,9 +365,9 @@ body.chat-open #main-chat {
                         </div>
                         <div class="flex items-center space-x-2">
                             <button id="theme-toggle" class="text-gray-400 hover:text-white" title="Toggle theme" aria-label="Toggle theme">
+                                <!-- JS will replace icon -->
                                 <svg id="theme-icon" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg">
-                                    <path class="moon" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
-                                    <path class="sun" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-11.34l-.7.7M4.04 19.96l-.7-.7M21 12h-1M4 12H3m15.66 5.66l-.7-.7M4.04 4.04l-.7.7"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-11.34l-.7.7M4.04 19.96l-.7-.7M21 12h-1M4 12H3m15.66 5.66l-.7-.7M4.04 4.04l-.7.7"></path>
                                 </svg>
                             </button>
                             <button id="logout-button" class="text-gray-400 hover:text-white" title="Logout">
@@ -441,27 +376,31 @@ body.chat-open #main-chat {
                         </div>
                     </div>
 
+                    <!-- New Chat Button -->
                     <div class="p-4">
                         <button id="new-chat-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2">
+                            <!-- Inlined Plus SVG -->
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
                             <span>New Chat</span>
                         </button>
                     </div>
 
+                    <!-- Contacts List -->
                     <div id="contacts-list" class="flex-1 overflow-y-auto">
+                        <!-- Contact items will be injected here -->
                         <p id="no-contacts" class="text-gray-500 text-center p-4">No recent chats.</p>
                     </div>
                 </div>
 
-                <div id="main-chat" class="flex-1 flex flex-col h-full">
+                <!-- Main Chat Area -->
+                <div class="flex-1 flex flex-col h-full">
+                    <!-- Chat Header -->
                     <div id="chat-header" class="flex items-center p-4 border-b border-gray-700 h-16 flex-shrink-0 bg-gray-800">
-                        <button id="back-to-contacts" class="mr-2 text-gray-400 hover:text-white" title="Back to contacts">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-                        </button>
                         <div id="chat-partner-avatar" class="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center font-bold text-white"></div>
                         <span id="chat-partner-username" class="ml-3 font-semibold text-white"></span>
                     </div>
 
+                    <!-- Welcome/Empty State -->
                     <div id="chat-welcome" class="flex-1 flex flex-col items-center justify-center text-gray-500 p-8 text-center">
                         <svg class="w-24 h-24 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 5.523-4.477 10-10 10S1 17.523 1 12 5.477 2 11 2s10 4.477 10 10z"></path></svg>
                         <h2 class="text-2xl font-semibold text-gray-400">Welcome to D-Chat</h2>
@@ -469,10 +408,13 @@ body.chat-open #main-chat {
                         <p class="text-sm mt-2">All messages are end-to-end encrypted.</p>
                     </div>
                     
+                    <!-- Messages Container -->
                     <div id="chat-messages-container" class="hidden flex-1 flex flex-col">
                         <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4">
-                            </div>
+                            <!-- Messages will be injected here -->
+                        </div>
 
+                        <!-- Message Input -->
                         <form id="message-form" class="p-4 border-t border-gray-700 bg-gray-800 relative">
                             <div class="flex items-center space-x-3">
                                 <button type="button" id="emoji-button" class="emoji-button" title="Insert emoji">😊</button>
@@ -481,6 +423,7 @@ body.chat-open #main-chat {
                                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
                                 </button>
                             </div>
+                            <!-- Emoji picker -->
                             <div id="emoji-picker" aria-hidden="true">
                                 <div class="emoji-grid" id="emoji-grid"></div>
                             </div>
@@ -491,6 +434,7 @@ body.chat-open #main-chat {
         </div>
     </div>
 
+    <!-- New Chat Modal -->
     <div id="new-chat-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
         <div class="bg-gray-800 rounded-2xl shadow-lg p-8 w-full max-w-md">
             <h2 class="text-2xl font-bold text-white mb-6">Start a New Chat</h2>
@@ -515,37 +459,18 @@ body.chat-open #main-chat {
     </div>
 
 
+    <!-- JavaScript -->
     <script type="module">
         // --- Globals ---
-        
-        // A resilient list of public Gun relay peers.
-        // This is VASTLY superior to a single peer for production.
-        const PEERS = [
-            'https://gun-man-web.onrender.com/gun',
-            'https://relay.grindro.ooo/gun',
-            'https://gun-relay.skg.la/gun',
-            'https://gun-eu.herokuapp.com/gun',
-            'https://gun-us.herokuapp.com/gun'
-        ];
-
-        const gun = (typeof window !== 'undefined' && window.Gun) ? Gun({ peers: PEERS }) : null;
+        const gun = (typeof window !== 'undefined' && window.Gun) ? Gun({ peers: ['https://gun-man-web.onrender.com/gun'] }) : null;
         if (!gun) {
             alert('Gun.js failed to load. Check network or CDN.');
         }
-        
-        // Access Gun's crypto library
-        const SEA = (typeof window !== 'undefined') ? window.SEA : null;
-        if (!SEA) {
-            alert('Gun.js SEA (Security) failed to load. Check network or CDN.');
-        }
-
         const app = {}; // App state
-        app.currentUser = null;     // The user's username (e.g., "alice")
-        app.currentChat = null;     // { username: "bob", pubkey: "..." }
-        app.sharedKeys = {};        // Cache for derived shared keys { partnerUsername: CryptoKey }
-        app.userKeys = null;        // { privateKey: CryptoKey, publicKey: CryptoKey, publicKeyJwk: Object }
-        app.gunUser = null;         // The gun user object (for auth)
-        app.activeListeners = {};   // To store active .on() listeners
+        app.currentUser = null;
+        app.currentChat = null;
+        app.sharedKeys = {}; // Cache for derived shared keys { partnerUsername: CryptoKey }
+        app.userKeys = null; // { privateKey: CryptoKey, publicKey: CryptoKey }
 
         // --- DOM Elements ---
         const authPage = document.getElementById('auth-page');
@@ -561,7 +486,6 @@ body.chat-open #main-chat {
         const newChatButton = document.getElementById('new-chat-button');
         const newChatModal = document.getElementById('new-chat-modal');
         const newChatForm = document.getElementById('new-chat-form');
-        const newChatUsernameInput = document.getElementById('new-chat-username');
         const newChatStatus = document.getElementById('new-chat-status');
         const cancelNewChat = document.getElementById('cancel-new-chat');
         const contactsList = document.getElementById('contacts-list');
@@ -578,103 +502,11 @@ body.chat-open #main-chat {
         const emojiPicker = document.getElementById('emoji-picker');
         const emojiGrid = document.getElementById('emoji-grid');
         const themeToggle = document.getElementById('theme-toggle');
-        const backToContacts = document.getElementById('back-to-contacts');
-        const body = document.body;
+        const themeIcon = document.getElementById('theme-icon');
 
-        // A small emoji set
-        const EMOJIS = ['😀','😁','😂','🤣','🙂','🙃','😉','😍','😘','😅','🤔','🤞','👍','👎','🙏','🎉','🔥','🌟','💯','❤️','😎','🤗','😴','🤖','😇','😬','😜','😢','😭','😡','🥳','🧐','🤯','🤡','🥺','🤮','🤐','🤫','🙏','🧠','👋','🙌','✌️','🚀','🛸','💻','📱'];
+        // A small emoji set (expand as needed)
+        const EMOJIS = ['😀','😁','😂','🤣','🙂','🙃','😉','😍','😘','😅','🤔','🤞','👍','👎','🙏','🎉','🔥','🌟','💯','❤️','😎','🤗','😴','🤖','😇','😬','😜','😢','😭','😡','🥳'];
 
-        // ===================================
-        // ---    UI & HELPER FUNCTIONS    ---
-        // ===================================
-
-        /**
-         * Toggles the auth forms between Login and Signup
-         */
-        function toggleAuthTabs(show) {
-            if (show === 'login') {
-                loginForm.classList.remove('hidden');
-                signupForm.classList.add('hidden');
-                tabLogin.classList.add('active-tab');
-                tabSignup.classList.remove('active-tab');
-            } else {
-                loginForm.classList.add('hidden');
-                signupForm.classList.remove('hidden');
-                tabLogin.classList.remove('active-tab');
-                tabSignup.classList.add('active-tab');
-            }
-            authStatus.textContent = '';
-        }
-
-        /**
-         * Sets and displays a message on the auth forms.
-         */
-        function showStatus(element, message, isError = true) {
-            element.textContent = message;
-            element.className = isError 
-                ? 'mt-4 text-center text-sm text-red-400' 
-                : 'mt-4 text-center text-sm text-green-400';
-        }
-
-        /**
-         * Gets the first letter of a username for the avatar.
-         */
-        function getAvatar(username) {
-            return username ? username.charAt(0).toUpperCase() : '?';
-        }
-
-        /**
-         * Formats a timestamp into a readable HH:MM time.
-         */
-        function formatTimestamp(timestamp) {
-            if (!timestamp) return '';
-            const date = new Date(timestamp);
-            return date.toLocaleTimeString(navigator.language, {
-                hour: '2-digit',
-                minute:'2-digit'
-            });
-        }
-        
-        /**
-         * Scrolls the chat window to the latest message.
-         */
-        function scrollToBottom() {
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        /**
-         * Clears all active chat message listeners.
-         */
-        function clearChatListeners() {
-            for (const key in app.activeListeners) {
-                app.activeListeners[key].off();
-                delete app.activeListeners[key];
-            }
-        }
-        
-        /**
-         * Resets the entire app state to logout.
-         */
-        function resetAppState() {
-            app.currentUser = null;
-            app.currentChat = null;
-            app.sharedKeys = {};
-            app.userKeys = null;
-            app.gunUser = null;
-            
-            clearChatListeners();
-
-            contactsList.innerHTML = '';
-            noContactsEl.classList.remove('hidden');
-            chatMessages.innerHTML = '';
-
-            chatPage.classList.add('hidden');
-            authPage.classList.remove('hidden');
-            
-            body.classList.remove('chat-open');
-        }
-        
-        // --- Emoji Picker ---
         function populateEmojis() {
             if (!emojiGrid) return;
             emojiGrid.innerHTML = '';
@@ -724,31 +556,38 @@ body.chat-open #main-chat {
                 input.value = (input.value || '') + text;
             }
         }
-        
-        // --- Theme Toggle ---
-        function applyTheme(theme) {
-            if (theme === 'light') {
-                document.documentElement.classList.add('light');
-            } else {
-                document.documentElement.classList.remove('light');
+
+        // Close picker when clicking outside
+        document.addEventListener('click', (e) => {
+            const target = e.target;
+            if (!emojiPicker || !emojiButton) return;
+            if (emojiPicker.contains(target) || emojiButton.contains(target)) {
+                return;
             }
-        }
-        
-        function handleThemeToggle() {
-            const currentTheme = document.documentElement.classList.contains('light') ? 'light' : 'dark';
-            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-            applyTheme(newTheme);
-            localStorage.setItem('dchat-theme', newTheme);
-        }
+            hideEmojiPicker();
+        });
+
+        // Toggle button handler
+        emojiButton?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleEmojiPicker();
+        });
 
         // ===================================
-        // ---     CRYPTO UTILITIES        ---
+        // ---      CRYPTO UTILITIES       ---
         // ===================================
-        
-        // Base64/ArrayBuffer converters
+
+        /**
+         * Converts an ArrayBuffer or TypedArray to a Base64 string.
+         */
         function arrayBufferToB64(buffer) {
+            let bytes;
+            if (buffer instanceof Uint8Array) {
+                bytes = buffer;
+            } else {
+                bytes = new Uint8Array(buffer);
+            }
             let binary = '';
-            const bytes = new Uint8Array(buffer);
             const len = bytes.byteLength;
             for (let i = 0; i < len; i++) {
                 binary += String.fromCharCode(bytes[i]);
@@ -756,6 +595,9 @@ body.chat-open #main-chat {
             return window.btoa(binary);
         }
 
+        /**
+         * Converts a Base64 string to an ArrayBuffer.
+         */
         function b64ToArrayBuffer(b64) {
             const binary_string = window.atob(b64);
             const len = binary_string.length;
@@ -769,23 +611,14 @@ body.chat-open #main-chat {
         function textToArrayBuffer(str) { return new TextEncoder().encode(str); }
         function arrayBufferToText(buffer) { return new TextDecoder().decode(buffer); }
 
-        /**
-         * Generates an ECDH P-256 key pair.
-         * @returns {Promise<CryptoKeyPair>}
-         */
         async function generateKeys() {
             return await crypto.subtle.generateKey(
                 { name: 'ECDH', namedCurve: 'P-256' },
-                true, // extractable
+                true,
                 ['deriveKey']
             );
         }
 
-        /**
-         * Imports a public key from JWK format.
-         * @param {Object} jwk - The public key in JWK format.
-         * @returns {Promise<CryptoKey>}
-         */
         async function importPubKey(jwk) {
             return await crypto.subtle.importKey(
                 'jwk',
@@ -796,11 +629,6 @@ body.chat-open #main-chat {
             );
         }
 
-        /**
-         * Imports a private key from JWK format.
-         * @param {Object} jwk - The private key in JWK format.
-         * @returns {Promise<CryptoKey>}
-         */
         async function importPrivKey(jwk) {
             return await crypto.subtle.importKey(
                 'jwk',
@@ -811,528 +639,497 @@ body.chat-open #main-chat {
             );
         }
 
-        /**
-         * Derives a shared AES-GCM 256-bit key.
-         * @param {CryptoKey} myPrivateKey - The user's private key.
-         * @param {CryptoKey} partnerPublicKey - The chat partner's public key.
-         * @returns {Promise<CryptoKey>} - The derived AES-GCM key.
-         */
         async function deriveSharedKey(myPrivateKey, partnerPublicKey) {
             return await crypto.subtle.deriveKey(
                 { name: 'ECDH', public: partnerPublicKey },
                 myPrivateKey,
                 { name: 'AES-GCM', length: 256 },
-                true, // extractable
+                true,
                 ['encrypt', 'decrypt']
             );
         }
 
-        /**
-         * Encrypts a message using AES-GCM.
-         * @param {CryptoKey} sharedKey - The derived shared key.
-         * @param {string} plaintext - The message to encrypt.
-         * @returns {Promise<Object>} - An object { ct: string (base64), iv: string (base64) }
-         */
         async function encryptMessage(sharedKey, plaintext) {
-            const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV
+            const iv = crypto.getRandomValues(new Uint8Array(12));
             const encodedText = textToArrayBuffer(plaintext);
-            
-            const ciphertext = await crypto.subtle.encrypt(
-                { name: 'AES-GCM', iv: iv },
-                sharedKey,
-                encodedText
-            );
-
-            return {
-                ct: arrayBufferToB64(ciphertext),
-                iv: arrayBufferToB64(iv)
-            };
+            const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, sharedKey, encodedText);
+            return { ct: arrayBufferToB64(ciphertext), iv: arrayBufferToB64(iv) };
         }
 
-        /**
-         * Decrypts a message.
-         * @param {CryptoKey} sharedKey - The derived shared key.
-         * @param {string} ct_b64 - The base64-encoded ciphertext.
-         * @param {string} iv_b64 - The base64-encoded IV.
-         * @returns {Promise<string>} - The decrypted plaintext.
-         */
         async function decryptMessage(sharedKey, ct_b64, iv_b64) {
             try {
-                const iv = b64ToArrayBuffer(iv_b64);
+                const ivBuf = b64ToArrayBuffer(iv_b64);
+                const iv = new Uint8Array(ivBuf);
                 const ciphertext = b64ToArrayBuffer(ct_b64);
-
-                const decryptedBuffer = await crypto.subtle.decrypt(
-                    { name: 'AES-GCM', iv: iv },
-                    sharedKey,
-                    ciphertext
-                );
-
+                const decryptedBuffer = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, sharedKey, ciphertext);
                 return arrayBufferToText(decryptedBuffer);
             } catch (e) {
-                console.error("Decryption failed:", e, ct_b64, iv_b64);
+                console.error("Decryption failed:", e);
                 return "🔒 [Failed to decrypt message]";
             }
         }
 
+        // -----------------------
+        // Password-based key wrap
+        // -----------------------
+        async function deriveKeyFromPassword(password, salt, iterations = 100000) {
+            const enc = new TextEncoder();
+            const passKey = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+            return crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt: salt, iterations: iterations, hash: 'SHA-256' },
+                passKey,
+                { name: 'AES-GCM', length: 256 },
+                true,
+                ['encrypt', 'decrypt']
+            );
+        }
+
+        async function wrapPrivateKeyJWK(privateJwk, password) {
+            const salt = crypto.getRandomValues(new Uint8Array(16));
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const key = await deriveKeyFromPassword(password, salt);
+            const plaintext = textToArrayBuffer(JSON.stringify(privateJwk));
+            const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+            return {
+                ct: arrayBufferToB64(ciphertext),
+                iv: arrayBufferToB64(iv),
+                salt: arrayBufferToB64(salt)
+            };
+        }
+
+        async function unwrapPrivateKeyJWK(wrappedObj, password) {
+            const salt = new Uint8Array(b64ToArrayBuffer(wrappedObj.salt));
+            const iv = new Uint8Array(b64ToArrayBuffer(wrappedObj.iv));
+            const ct = b64ToArrayBuffer(wrappedObj.ct);
+            const key = await deriveKeyFromPassword(password, salt);
+            const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+            return JSON.parse(arrayBufferToText(decrypted));
+        }
 
         // ===================================
         // ---       AUTH LOGIC            ---
         // ===================================
-        
-        /**
-         * Handles the user signup process.
-         */
+
+        function showStatus(message, isError = false) {
+            authStatus.textContent = message;
+            authStatus.className = `mt-4 text-center text-sm ${isError ? 'text-red-400' : 'text-yellow-400'}`;
+        }
+
         async function handleSignup(e) {
             e.preventDefault();
-            const username = signupForm.querySelector('#signup-username').value;
-            const password = signupForm.querySelector('#signup-password').value;
-            if (!username || !password) return;
-            
-            showStatus(authStatus, "Creating account, generating keys...", false);
-            
-            // 1. Generate the E2EE (ECDH) key pair
-            let ecdhKeys;
-            try {
-                ecdhKeys = await generateKeys();
-            } catch (err) {
-                console.error("Key generation failed:", err);
-                showStatus(authStatus, "Error: Could not generate crypto keys.");
+            const username = document.getElementById('signup-username').value.trim();
+            const password = document.getElementById('signup-password').value;
+
+            if (!username || !password) {
+                showStatus("Username and password are required.", true);
                 return;
             }
 
-            // 2. Export keys to JWK format
-            const publicKeyJwk = await crypto.subtle.exportKey('jwk', ecdhKeys.publicKey);
-            const privateKeyJwk = await crypto.subtle.exportKey('jwk', ecdhKeys.privateKey);
+            showStatus("Checking username availability...");
 
-            // 3. Create the Gun user. This also derives a key from the password.
-            gun.user().create(username, password, async (ack) => {
-                if (ack.err) {
-                    console.error("Gun user creation error:", ack.err);
-                    showStatus(authStatus, ack.err);
-                } else {
-                    // 4. User created. Now auth to log in.
-                    gun.user().auth(username, password, async (authAck) => {
-                        if (authAck.err) {
-                            showStatus(authStatus, authAck.err);
-                            return;
-                        }
-                        
-                        showStatus(authStatus, "Encrypting and saving profile...", false);
+            gun.get('users').get(username).once(async (data) => {
+                if (data && (data.pubKey || data.privKey)) {
+                    showStatus("Username already taken. Please choose another.", true);
+                    return;
+                }
 
-                        // 5. Get the user's pair (for SEA)
-                        const user = gun.user();
-                        const gunPair = user.pair();
+                try {
+                    showStatus("Generating cryptographic keys...");
+                    const keyPair = await generateKeys();
 
-                        // 6. Encrypt the *private* ECDH key using the user's *password-derived* SEA key
-                        const encryptedPrivateKey = await SEA.encrypt(privateKeyJwk, gunPair);
-                        
-                        // 7. Store the *public* ECDH key (unencrypted) and the *encrypted private* ECDH key
-                        //    in the user's private, authenticated graph.
-                        user.get('profile').put({
-                            pubkey: publicKeyJwk,
-                            privkey_enc: encryptedPrivateKey
-                        }, (putAck) => {
-                            if (putAck.err) {
-                                showStatus(authStatus, `Error saving profile: ${putAck.err}`);
-                            } else {
-                                // 8. Success! Initialize the app.
-                                initializeApp(authAck.sea, username, {
-                                    publicKey: ecdhKeys.publicKey,
-                                    privateKey: ecdhKeys.privateKey,
-                                    publicKeyJwk: publicKeyJwk
-                                });
-                            }
-                        });
+                    const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+                    const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
+
+                    // Proper password-based AES-GCM wrapping
+                    showStatus("Securing private key...");
+                    const wrapped = await wrapPrivateKeyJWK(privateKeyJwk, password);
+
+                    const userNode = gun.get('users').get(username);
+                    userNode.put({
+                        pubKey: JSON.stringify(publicKeyJwk),
+                        privKey: JSON.stringify(wrapped) // store as JSON string
                     });
+
+                    // No plaintext stored in Gun for chats/messages.
+                    showStatus("Signup successful! Please log in.");
+                    switchTab('login');
+                    loginForm.reset();
+                    signupForm.reset();
+                    document.getElementById('login-username').value = username;
+                    document.getElementById('login-password').focus();
+
+                } catch (err) {
+                    console.error("Signup error:", err);
+                    showStatus("An error occurred during signup. Please try again.", true);
                 }
             });
         }
 
-        /**
-         * Handles the user login process.
-         */
-        function handleLogin(e) {
+        async function handleLogin(e) {
             e.preventDefault();
-            const username = loginForm.querySelector('#login-username').value;
-            const password = loginForm.querySelector('#login-password').value;
-            if (!username || !password) return;
-            
-            showStatus(authStatus, "Logging in...", false);
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
 
-            gun.user().auth(username, password, async (ack) => {
-                if (ack.err) {
-                    console.error("Gun auth error:", ack.err);
-                    showStatus(authStatus, "Invalid username or password.");
+            if (!username || !password) {
+                showStatus("Username and password are required.", true);
+                return;
+            }
+
+            showStatus("Logging in...");
+
+            gun.get('users').get(username).once(async (data) => {
+                if (!data || !data.privKey) {
+                    showStatus("Invalid username or password.", true);
                     return;
                 }
 
-                showStatus(authStatus, "Decrypting keys...", false);
-                const user = gun.user();
-                
-                // 1. Fetch the user's stored profile
-                user.get('profile').once(async (data) => {
-                    if (!data || !data.pubkey || !data.privkey_enc) {
-                        console.error("Profile data missing:", data);
-                        showStatus(authStatus, "Error: User profile is corrupted or incomplete.");
-                        gun.user().leave();
+                try {
+                    // privKey was stored as JSON string with ct/iv/salt
+                    const wrapped = (typeof data.privKey === 'string') ? JSON.parse(data.privKey) : data.privKey;
+                    let privateKeyJwk;
+                    try {
+                        privateKeyJwk = await unwrapPrivateKeyJWK(wrapped, password);
+                    } catch (err) {
+                        showStatus("Invalid username or password.", true);
                         return;
                     }
-                    
-                    try {
-                        // 2. Decrypt the stored private key using the auth'd SEA key
-                        const decryptedPrivKeyJwk = await SEA.decrypt(data.privkey_enc, ack.sea);
-                        
-                        if (!decryptedPrivKeyJwk) {
-                            throw new Error("Decryption returned null (likely bad password, but auth succeeded? investigate.)");
-                        }
-                        
-                        // 3. Import both keys into memory
-                        const publicKey = await importPubKey(data.pubkey);
-                        const privateKey = await importPrivKey(decryptedPrivKeyJwk);
-                        
-                        const keys = {
-                            publicKey: publicKey,
-                            privateKey: privateKey,
-                            publicKeyJwk: data.pubkey
-                        };
 
-                        // 4. Success! Initialize the app.
-                        initializeApp(ack.sea, username, keys);
+                    const publicKeyJwk = (typeof data.pubKey === 'string') ? JSON.parse(data.pubKey) : data.pubKey;
 
-                    } catch (err) {
-                        console.error("Failed to decrypt or import keys:", err);
-                        showStatus(authStatus, "Error: Could not decrypt keys. Please check password.");
-                        gun.user().leave();
-                    }
-                });
+                    // Store in session (sessionStorage cleared on logout)
+                    sessionStorage.setItem('currentUser', username);
+                    sessionStorage.setItem('privKey', JSON.stringify(privateKeyJwk));
+                    sessionStorage.setItem('pubKey', JSON.stringify(publicKeyJwk));
+
+                    app.userKeys = {
+                        privateKey: await importPrivKey(privateKeyJwk),
+                        publicKey: await importPubKey(publicKeyJwk)
+                    };
+
+                    app.currentUser = username;
+                    showStatus("");
+                    loginForm.reset();
+                    await initChatPage();
+
+                } catch (err) {
+                    console.error("Login error:", err);
+                    showStatus("Invalid username or password.", true);
+                }
             });
         }
 
-        /**
-         * Logs the user out.
-         */
         function handleLogout() {
-            gun.user().leave();
-            resetAppState();
+            sessionStorage.clear();
+            app.currentUser = null;
+            app.userKeys = null;
+            app.currentChat = null;
+            app.sharedKeys = {};
+
+            contactsList.innerHTML = '';
+            chatMessages.innerHTML = '';
+            noContactsEl.classList.remove('hidden');
+
+            chatPage.classList.add('hidden');
+            authPage.classList.remove('hidden');
+
+            switchTab('login');
+        }
+
+        function switchTab(tab) {
+            if (tab === 'login') {
+                tabLogin.classList.add('border-indigo-500', 'text-white');
+                tabLogin.classList.remove('text-gray-500');
+                tabSignup.classList.remove('border-indigo-500', 'text-white');
+                tabSignup.classList.add('text-gray-500');
+                loginForm.classList.remove('hidden');
+                signupForm.classList.add('hidden');
+            } else {
+                tabSignup.classList.add('border-indigo-500', 'text-white');
+                tabSignup.classList.remove('text-gray-500');
+                tabLogin.classList.remove('border-indigo-500', 'text-white');
+                tabLogin.classList.add('text-gray-500');
+                signupForm.classList.remove('hidden');
+                loginForm.classList.add('hidden');
+            }
+            authStatus.textContent = '';
         }
 
         // ===================================
-        // ---       APP LOGIC             ---
+        // ---       CHAT LOGIC            ---
         // ===================================
 
-        /**
-         * Main app initializer. Called after successful login/signup.
-         */
-        function initializeApp(gunUser, username, ecdhKeys) {
-            app.gunUser = gunUser;
-            app.currentUser = username;
-            app.userKeys = ecdhKeys;
-            
-            // Set sidebar UI
-            currentUsernameEl.textContent = username;
-            userAvatarEl.textContent = getAvatar(username);
-            
-            // Hide auth, show chat
+        async function initChatPage() {
             authPage.classList.add('hidden');
             chatPage.classList.remove('hidden');
-            
-            // Load the user's contact list
-            loadContactList();
+
+            currentUsernameEl.textContent = app.currentUser;
+            userAvatarEl.textContent = app.currentUser.charAt(0).toUpperCase();
+
+            loadUserChats();
         }
-        
-        /**
-         * Loads and renders the contact list from the user's graph.
-         */
-        function loadContactList() {
+
+        function loadUserChats() {
             contactsList.innerHTML = '';
-            let hasContacts = false;
-            
-            gun.user().get('chats').map().once((data, partnerUsername) => {
-                if (data && data.pubkey) {
-                    hasContacts = true;
-                    noContactsEl.classList.add('hidden');
-                    renderContact(partnerUsername, data.pubkey);
+            noContactsEl.classList.remove('hidden');
+
+            const chatsRef = gun.get('users').get(app.currentUser).get('chats');
+            chatsRef.map().on((val, key) => {
+                if (!val) return;
+                let chatId = null;
+                if (typeof val === 'string') chatId = val;
+                else if (val['#']) chatId = val['#'];
+                if (!chatId) return;
+                const partner = chatId.split(':').find(name => name !== app.currentUser);
+                if (partner) {
+                    addContactToList(partner, chatId);
                 }
             });
-            
-            if (!hasContacts) {
-                noContactsEl.classList.remove('hidden');
-            }
         }
-        
-        /**
-         * Creates a DOM element for a single contact.
-         */
-        function renderContact(username, pubkeyJwk) {
-            // Avoid duplicate contacts
-            if (document.getElementById(`contact-${username}`)) return;
-            
-            const contactDiv = document.createElement('div');
-            contactDiv.id = `contact-${username}`;
-            contactDiv.className = 'contact-item';
-            contactDiv.dataset.username = username;
-            // Store the pubkey on the element for easy access
-            contactDiv.dataset.pubkey = JSON.stringify(pubkeyJwk);
 
-            contactDiv.innerHTML = `
-                <div class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold text-white text-sm mr-3">
-                    ${getAvatar(username)}
+        function addContactToList(username, chatId) {
+            noContactsEl.classList.add('hidden');
+            if (document.getElementById(`contact-${username}`)) return;
+
+            const contactEl = document.createElement('div');
+            contactEl.id = `contact-${username}`;
+            contactEl.dataset.chatId = chatId;
+            contactEl.className = 'flex items-center p-4 cursor-pointer hover:bg-gray-700 border-b border-gray-700';
+            contactEl.innerHTML = `
+                <div class="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center font-bold text-white flex-shrink-0">
+                    ${username.charAt(0).toUpperCase()}
                 </div>
-                <div>
-                    <p class="font-semibold">${username}</p>
-                    <p class="text-sm">Click to chat</p>
+                <div class="ml-3 flex-1 min-w-0">
+                    <p class="font-semibold text-white truncate">${username}</p>
+                    <p class="text-sm text-gray-400 truncate">Click to open chat</p>
                 </div>
             `;
-            
-            contactDiv.addEventListener('click', () => openChat(username, pubkeyJwk));
-            contactsList.appendChild(contactDiv);
+            contactEl.addEventListener('click', () => {
+                openChat(username, chatId);
+            });
+            contactsList.prepend(contactEl);
         }
 
-        /**
-         * Handles starting a new chat from the modal.
-         */
         async function handleNewChat(e) {
             e.preventDefault();
-            const partnerUsername = newChatUsernameInput.value.trim();
-            if (!partnerUsername || partnerUsername === app.currentUser) {
-                showStatus(newChatStatus, "Invalid username.");
+            const partnerUsername = document.getElementById('new-chat-username').value.trim();
+            newChatStatus.textContent = '';
+
+            if (!partnerUsername) {
+                newChatStatus.textContent = 'Please enter a username.';
                 return;
             }
-            
-            showStatus(newChatStatus, "Searching for user...", false);
-            
-            // 1. Find the user and get their public key
-            // We read from the public user graph (`~@username` is an alias for `gun.get('~'+pubkey)`)
-            // We need to find their user graph, then their public profile.
-            gun.get(`~@${partnerUsername}`).get('profile').get('pubkey').once(async (partnerPubKeyJwk) => {
-                if (!partnerPubKeyJwk) {
-                    showStatus(newChatStatus, "Error: User not found or has no profile.");
+            if (partnerUsername === app.currentUser) {
+                newChatStatus.textContent = "You can't chat with yourself.";
+                return;
+            }
+            newChatStatus.textContent = 'Searching for user...';
+
+            gun.get('users').get(partnerUsername).get('pubKey').once(async (pubKey) => {
+                if (!pubKey) {
+                    newChatStatus.textContent = 'User not found.';
                     return;
                 }
+                const chatId = [app.currentUser, partnerUsername].sort().join(':');
+                gun.get('users').get(app.currentUser).get('chats').set(chatId);
+                gun.get('users').get(partnerUsername).get('chats').set(chatId);
 
-                // 2. User found. Add them to our contact list.
-                // This saves the partner's username and public key to *our* private graph.
-                gun.user().get('chats').get(partnerUsername).put({
-                    pubkey: partnerPubKeyJwk
+                newChatModal.classList.add('hidden');
+                newChatForm.reset();
+
+                addContactToList(partnerUsername, chatId);
+                openChat(partnerUsername, chatId);
+            });
+        }
+
+        async function getSharedKey(partnerUsername) {
+            if (app.sharedKeys[partnerUsername]) return app.sharedKeys[partnerUsername];
+
+            let partnerPubKeyJwk = await new Promise(resolve => {
+                gun.get('users').get(partnerUsername).get('pubKey').once(resolve);
+            });
+
+            if (!partnerPubKeyJwk) throw new Error("Could not fetch partner's public key.");
+            if (typeof partnerPubKeyJwk === 'string') partnerPubKeyJwk = JSON.parse(partnerPubKeyJwk);
+
+            const partnerPubKey = await importPubKey(partnerPubKeyJwk);
+            const sharedKey = await deriveSharedKey(app.userKeys.privateKey, partnerPubKey);
+
+            app.sharedKeys[partnerUsername] = sharedKey;
+            return sharedKey;
+        }
+
+        async function openChat(partnerUsername, chatId) {
+            try {
+                await getSharedKey(partnerUsername);
+
+                if (app.currentChat && app.currentChat.id) {
+                     gun.get('chat').get(app.currentChat.id).off();
+                }
+
+                app.currentChat = { partner: partnerUsername, id: chatId };
+
+                chatWelcome.classList.add('hidden');
+                chatMessagesContainer.classList.remove('hidden');
+
+                chatPartnerUsername.textContent = partnerUsername;
+                chatPartnerAvatar.textContent = partnerUsername.charAt(0).toUpperCase();
+                chatMessages.innerHTML = '';
+
+                document.querySelectorAll('#contacts-list > div').forEach(el => {
+                    el.classList.remove('bg-gray-900');
+                });
+                document.getElementById(`contact-${partnerUsername}`)?.classList.add('bg-gray-900');
+
+                // Listen for messages
+                gun.get('chat').get(app.currentChat.id).map().on((msg, msgKey) => {
+                    if (!msg) return;
+                    if ((msg.ct) && msg.sender) {
+                        displayMessage(msg);
+                    }
                 });
 
-                // 3. Add *us* to *their* contact list so they see us.
-                // We write to *their* public chat request node.
-                // Note: `~${ack.sea.pub}` is the path to the user's public graph.
-                gun.get(`~${app.gunUser.pub}`).get('profile').get('pubkey').once((myPubKeyJwk) => {
-                    gun.get(`~@${partnerUsername}`).get('chats').get(app.currentUser).put({
-                        pubkey: myPubKeyJwk
-                    });
-                });
-                
+            } catch (err) {
+                console.error("Error opening chat:", err);
+                alert("Could not start encrypted chat. Unable to get partner's key.");
+            }
+        }
 
-                // 4. Render the contact and open the chat
-                renderContact(partnerUsername, partnerPubKeyJwk);
-                openChat(partnerUsername, partnerPubKeyJwk);
+        async function displayMessage(msg) {
+            const isMe = msg.sender === app.currentUser;
+            let plaintext = "🔒 [Failed to decrypt]";
 
-                // 5. Close modal
+            try {
+                const partnerForKey = isMe ? app.currentChat.partner : msg.sender;
+                const sharedKey = await getSharedKey(partnerForKey);
+                if (msg.ct && msg.iv) {
+                    plaintext = await decryptMessage(sharedKey, msg.ct, msg.iv);
+                } else if (msg.text) {
+                    // fallback only if present (should not be used in production)
+                    plaintext = msg.text;
+                }
+            } catch (e) {
+                console.error("Display decrypt error:", e);
+            }
+
+            const safeText = (plaintext || '').replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+            const msgEl = document.createElement('div');
+            msgEl.className = `flex ${isMe ? 'justify-end' : 'justify-start'}`;
+            msgEl.innerHTML = `
+                <div class="max-w-xs md:max-w-md lg:max-w-lg px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600 text-white rounded-br-lg' : 'bg-gray-700 text-white rounded-bl-lg'}">
+                    <p>${safeText}</p>
+                </div>
+            `;
+
+            const ts = msg.timestamp || Date.now();
+            const ctSnippet = (msg.ct || '').slice(0,8).replace(/[^a-zA-Z0-9]/g,'');
+            const msgId = `msg-${ts}-${msg.sender.slice(0,4)}-${ctSnippet}`;
+            const existingMsg = document.getElementById(msgId);
+            if (existingMsg) {
+                existingMsg.innerHTML = msgEl.innerHTML;
+            } else {
+                msgEl.id = msgId;
+                chatMessages.appendChild(msgEl);
+            }
+
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        async function handleSendMessage(e) {
+            e.preventDefault();
+            const text = messageInput.value.trim();
+            if (!text || !app.currentChat) return;
+
+            try {
+                const sharedKey = await getSharedKey(app.currentChat.partner);
+                const encrypted = await encryptMessage(sharedKey, text);
+                const timestamp = Date.now();
+                const message = {
+                    sender: app.currentUser,
+                    ct: encrypted.ct,
+                    iv: encrypted.iv,
+                    timestamp: timestamp
+                    // NOTE: no plaintext 'text' field stored to maintain E2E privacy
+                };
+                gun.get('chat').get(app.currentChat.id).set(message);
+                messageInput.value = '';
+            } catch (err) {
+                console.error("Error sending message:", err);
+                alert("Failed to send message.");
+            }
+        }
+
+
+        // ===================================
+        // ---       APP INIT & EVENTS     ---
+        // ===================================
+
+        function applyTheme(theme) {
+            const isLight = theme === 'light';
+            document.documentElement.classList.toggle('light', isLight);
+            if (themeIcon) {
+                if (isLight) {
+                    themeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-11.34l-.7.7M4.04 19.96l-.7-.7M21 12h-1M4 12H3m15.66 5.66l-.7-.7M4.04 4.04l-.7.7M12 7a5 5 0 100 10 5 5 0 000-10z"></path>';
+                } else {
+                    themeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>';
+                }
+            }
+            localStorage.setItem('theme', theme);
+        }
+
+        async function initApp() {
+            populateEmojis();
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            applyTheme(savedTheme);
+
+            themeToggle?.addEventListener('click', (e) => {
+                const current = document.documentElement.classList.contains('light') ? 'light' : 'dark';
+                const next = current === 'light' ? 'dark' : 'light';
+                applyTheme(next);
+            });
+
+            const username = sessionStorage.getItem('currentUser');
+            const privKeyStr = sessionStorage.getItem('privKey');
+            const pubKeyStr = sessionStorage.getItem('pubKey');
+
+            if (username && privKeyStr && pubKeyStr) {
+                try {
+                    app.currentUser = username;
+                    app.userKeys = {
+                        privateKey: await importPrivKey(JSON.parse(privKeyStr)),
+                        publicKey: await importPubKey(JSON.parse(pubKeyStr))
+                    };
+                    await initChatPage();
+                } catch (e) {
+                    console.error("Session restore failed:", e);
+                    handleLogout();
+                }
+            } else {
+                authPage.classList.remove('hidden');
+                chatPage.classList.add('hidden');
+            }
+
+            tabLogin.addEventListener('click', () => switchTab('login'));
+            tabSignup.addEventListener('click', () => switchTab('signup'));
+            loginForm.addEventListener('submit', handleLogin);
+            signupForm.addEventListener('submit', handleSignup);
+
+            logoutButton.addEventListener('click', handleLogout);
+            newChatButton.addEventListener('click', () => {
+                newChatModal.classList.remove('hidden');
+                document.getElementById('new-chat-username').focus();
+            });
+            cancelNewChat.addEventListener('click', () => {
                 newChatModal.classList.add('hidden');
                 newChatForm.reset();
                 newChatStatus.textContent = '';
             });
-        }
-        
-        /**
-         * Opens a chat window with a specific user.
-         */
-        async function openChat(partnerUsername, partnerPubKeyJwk) {
-            // 0. Set as active chat
-            app.currentChat = {
-                username: partnerUsername,
-                pubkeyJwk: partnerPubKeyJwk
-            };
-
-            // 1. Show chat window, hide welcome
-            chatWelcome.classList.add('hidden');
-            chatHeader.classList.remove('hidden');
-            chatMessagesContainer.classList.remove('hidden');
-
-            // 2. Set chat header
-            chatPartnerAvatar.textContent = getAvatar(partnerUsername);
-            chatPartnerUsername.textContent = partnerUsername;
-            
-            // 3. Highlight active contact
-            document.querySelectorAll('.contact-item').forEach(c => c.classList.remove('active'));
-            document.getElementById(`contact-${partnerUsername}`)?.classList.add('active');
-
-            // 4. Clear old messages and listeners
-            chatMessages.innerHTML = '';
-            clearChatListeners();
-
-            // 5. Derive the shared E2EE key
-            let sharedKey;
-            try {
-                // Check cache first
-                if (app.sharedKeys[partnerUsername]) {
-                    sharedKey = app.sharedKeys[partnerUsername];
-                } else {
-                    const partnerPubKey = await importPubKey(partnerPubKeyJwk);
-                    sharedKey = await deriveSharedKey(app.userKeys.privateKey, partnerPubKey);
-                    app.sharedKeys[partnerUsername] = sharedKey;
-                }
-            } catch (err) {
-                console.error("Failed to derive shared key:", err);
-                chatMessages.innerHTML = '<p class="text-center text-red-400">Could not establish secure connection.</p>';
-                return;
-            }
-
-            // 6. Define the deterministic chat ID
-            const chatId = [app.currentUser, partnerUsername].sort().join('/');
-            const chatNode = gun.get('chat/' + chatId);
-            
-            // 7. Load and listen for messages
-            const listener = chatNode.map().on(async (msg) => {
-                if (msg && msg.text && msg.iv && msg.from) {
-                    const isSent = msg.from === app.currentUser;
-                    const keyToUse = isSent ? app.sharedKeys[partnerUsername] : app.sharedKeys[partnerUsername];
-                    
-                    if (!keyToUse) {
-                        console.warn("No shared key for message, skipping", msg);
-                        return;
-                    }
-                    
-                    const decryptedText = await decryptMessage(keyToUse, msg.text, msg.iv);
-                    renderMessage(msg, decryptedText, isSent);
-                }
-            });
-            app.activeListeners[chatId] = listener;
-
-            // 8. Show mobile view
-            body.classList.add('chat-open');
-        }
-
-        /**
-         * Renders a single message bubble in the chat window.
-         */
-        function renderMessage(msg, decryptedText, isSent) {
-            // Prevent duplicate messages from rendering
-            const msgId = `msg-${msg.timestamp}-${msg.from}`;
-            if (document.getElementById(msgId)) return;
-            
-            const row = document.createElement('div');
-            row.id = msgId;
-            row.className = isSent ? 'message-row sent' : 'message-row received';
-            
-            const bubble = document.createElement('div');
-            bubble.className = isSent ? 'message-bubble sent' : 'message-bubble received';
-            
-            const textEl = document.createElement('div');
-            textEl.className = 'message-text';
-            textEl.textContent = decryptedText;
-            
-            const timeEl = document.createElement('div');
-            timeEl.className = 'message-time';
-            timeEl.textContent = formatTimestamp(msg.timestamp);
-
-            bubble.appendChild(textEl);
-            bubble.appendChild(timeEl);
-            row.appendChild(bubble);
-            
-            chatMessages.appendChild(row);
-            scrollToBottom();
-        }
-
-        /**
-         * Handles sending a message.
-         */
-        async function handleSendMessage(e) {
-            e.preventDefault();
-            const text = messageInput.value;
-            if (!text || !app.currentChat) return;
-
-            const partnerUsername = app.currentChat.username;
-            const sharedKey = app.sharedKeys[partnerUsername];
-            
-            if (!sharedKey) {
-                console.error("No shared key for sending message!");
-                return;
-            }
-
-            // 1. Encrypt the message
-            const encrypted = await encryptMessage(sharedKey, text);
-            
-            const message = {
-                from: app.currentUser,
-                text: encrypted.ct,
-                iv: encrypted.iv,
-                timestamp: Gun.state() // Use Gun's time for server-independent time
-            };
-            
-            // 2. Define the deterministic chat ID and save the message
-            const chatId = [app.currentUser, partnerUsername].sort().join('/');
-            gun.get('chat/' + chatId).set(message);
-
-            // 3. Clear input
-            messageInput.value = '';
-        }
-        
-
-        // ===================================
-        // ---       EVENT LISTENERS       ---
-        // ===================================
-        
-        function init() {
-            // Auth tabs
-            tabLogin.addEventListener('click', () => toggleAuthTabs('login'));
-            tabSignup.addEventListener('click', () => toggleAuthTabs('signup'));
-            
-            // Auth forms
-            loginForm.addEventListener('submit', handleLogin);
-            signupForm.addEventListener('submit', handleSignup);
-            
-            // Main app buttons
-            logoutButton.addEventListener('click', handleLogout);
-            newChatButton.addEventListener('click', () => newChatModal.classList.remove('hidden'));
-            
-            // New chat modal
-            cancelNewChat.addEventListener('click', () => newChatModal.classList.add('hidden'));
             newChatForm.addEventListener('submit', handleNewChat);
-            
-            // Message form
             messageForm.addEventListener('submit', handleSendMessage);
-            
-            // Emoji picker
-            emojiButton.addEventListener('click', (e) => {
-                e.stopPropagation();
-                toggleEmojiPicker();
-            });
-            document.addEventListener('click', (e) => {
-                if (!emojiPicker.contains(e.target) && !emojiButton.contains(e.target)) {
-                    hideEmojiPicker();
-                }
-            });
-            
-            // Theme toggle
-            themeToggle.addEventListener('click', handleThemeToggle);
-            
-            // Mobile back button
-            backToContacts.addEventListener('click', () => body.classList.remove('chat-open'));
-            
-            // --- Check for initial state ---
-            
-            // 1. Apply saved theme
-            const savedTheme = localStorage.getItem('dchat-theme') || 'dark';
-            applyTheme(savedTheme);
-            
-            // 2. Check for active Gun session
-            gun.user().recall({ sessionStorage: true }, (ack) => {
-                if (ack.is) {
-                    // User is already logged in
-                    showStatus(authStatus, "Resuming session...", false);
-                    handleLogin({ preventDefault: () => {} }); // Re-auth to decrypt keys
-                }
-                // If not, just wait for user to log in
-            });
         }
-        
-        // Start the app
-        init();
-        
+
+        initApp();
+
     </script>
 </body>
 </html>
