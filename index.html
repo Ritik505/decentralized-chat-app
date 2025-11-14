@@ -14,16 +14,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>D-Chat | Decentralized Chat</title>
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Gun.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
-    <!-- CryptoJS AES CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
     
     <style>
-/* --- Color Palette Definitions --- */
 :root {
     --color-bg-primary: #0D1117;
     --color-bg-secondary: #161B22;
@@ -59,7 +55,6 @@ html, body {
 *, *::before, *::after { box-sizing: inherit; }
 
 #auth-page { display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; }
-
 #auth-page > div {
     background-color: var(--color-bg-card) !important;
     border-radius: 12px !important;
@@ -76,12 +71,7 @@ html, body {
     transition: all 0.2s ease;
 }
 
-#tab-login.active { 
-    color: var(--color-text-light) !important;
-    border-bottom-color: var(--color-accent-primary) !important;
-}
-
-#tab-signup.active {
+#tab-login.active, #tab-signup.active { 
     color: var(--color-text-light) !important;
     border-bottom-color: var(--color-accent-primary) !important;
 }
@@ -125,7 +115,6 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 }
 
 #chat-page > div.flex { display: flex; height: 100%; }
-
 .flex-col.w-full {
     background-color: var(--color-bg-secondary) !important;
     border-right: 1px solid var(--color-border) !important;
@@ -154,7 +143,6 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 }
 
 .contact-item:hover { background-color: var(--color-bg-card) !important; }
-
 .contact-item.active {
     background-color: var(--color-bg-card) !important;
     border-left: 3px solid var(--color-accent-primary);
@@ -165,7 +153,6 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 .contact-item p.text-sm { color: var(--color-text-muted) !important; }
 
 .flex-1.flex.flex-col { background-color: var(--color-bg-primary) !important; }
-
 #chat-welcome { color: var(--color-text-muted) !important; }
 #chat-welcome h2 { color: var(--color-text-light) !important; }
 
@@ -175,11 +162,6 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 }
 
 #chat-messages { overflow-y: auto; }
-
-.message-row { 
-    display: flex; margin-bottom: 0.5rem; 
-    align-items: flex-end;
-}
 
 .message-bubble { 
     max-width: 65%;
@@ -208,7 +190,6 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
     color: rgba(201, 209, 217, 0.5);
     font-size: 0.7rem; 
     margin: 0 8px;
-    align-self: flex-end;
 }
 
 #chat-messages::-webkit-scrollbar,
@@ -222,9 +203,6 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
     background: var(--color-border);
     border-radius: 4px; 
 }
-
-#chat-messages::-webkit-scrollbar-thumb:hover,
-#contacts-list::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
 
 .hidden { display: none !important; }
 
@@ -280,20 +258,6 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
     background: var(--color-bg-secondary);
 }
 
-.loading-spinner {
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
 .status-message {
     padding: 12px;
     border-radius: 8px;
@@ -327,28 +291,19 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 </head>
 <body class="h-full font-sans text-gray-200 antialiased">
 
-    <!-- Main Application Container -->
     <div id="app-container" class="h-full">
-
-        <!-- ===== Auth Page ===== -->
+        <!-- Auth Page -->
         <div id="auth-page" class="flex items-center justify-center h-full p-4">
             <div class="w-full max-w-md bg-gray-800 rounded-2xl shadow-lg p-8">
                 <h1 class="text-3xl font-bold text-center text-white mb-2">D-Chat</h1>
                 <p class="text-center text-gray-400 mb-6">Decentralized & Encrypted</p>
 
-                <!-- Tabs -->
                 <div class="flex border-b border-gray-700 mb-6">
-                    <button id="tab-login" class="flex-1 py-2 font-semibold active transition-colors duration-200">
-                        Login
-                    </button>
-                    <button id="tab-signup" class="flex-1 py-2 font-semibold transition-colors duration-200">
-                        Sign Up
-                    </button>
+                    <button id="tab-login" class="flex-1 py-2 font-semibold active transition-colors duration-200">Login</button>
+                    <button id="tab-signup" class="flex-1 py-2 font-semibold transition-colors duration-200">Sign Up</button>
                 </div>
 
-                <!-- Auth Forms -->
                 <div id="auth-forms">
-                    <!-- Login Form -->
                     <form id="login-form" class="space-y-4">
                         <div>
                             <label for="login-username" class="block text-sm font-medium text-gray-300">Username</label>
@@ -358,12 +313,9 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                             <label for="login-password" class="block text-sm font-medium text-gray-300">Password</label>
                             <input type="password" id="login-password" required autocomplete="current-password" class="mt-1 block w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
                         </div>
-                        <button type="submit" id="login-submit" class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold transition duration-200">
-                            Login
-                        </button>
+                        <button type="submit" id="login-submit" class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold transition duration-200">Login</button>
                     </form>
 
-                    <!-- Signup Form -->
                     <form id="signup-form" class="space-y-4 hidden">
                         <div>
                             <label for="signup-username" class="block text-sm font-medium text-gray-300">Username</label>
@@ -375,9 +327,7 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                             <input type="password" id="signup-password" required autocomplete="new-password" minlength="8" class="mt-1 block w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
                             <p class="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
                         </div>
-                        <button type="submit" id="signup-submit" class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold transition duration-200">
-                            Sign Up
-                        </button>
+                        <button type="submit" id="signup-submit" class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold transition duration-200">Sign Up</button>
                     </form>
                 </div>
 
@@ -385,30 +335,27 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             </div>
         </div>
 
-        <!-- ===== Chat Page ===== -->
+        <!-- Chat Page -->
         <div id="chat-page" class="hidden h-full">
             <div class="flex h-full">
-                <!-- Sidebar (Contacts List) -->
                 <div class="flex flex-col w-full md:w-1/3 lg:w-1/4 h-full bg-gray-800 border-r border-gray-700">
-                    <!-- Sidebar Header -->
                     <div class="flex items-center justify-between p-4 border-b border-gray-700 h-16 flex-shrink-0">
                         <div class="flex items-center space-x-2 min-w-0">
                             <div id="user-avatar" class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold text-white flex-shrink-0"></div>
                             <span id="current-username" class="font-semibold text-white truncate"></span>
                         </div>
                         <div class="flex items-center space-x-2 flex-shrink-0">
-                            <button id="theme-toggle" class="text-gray-400 hover:text-white p-2" title="Toggle theme" aria-label="Toggle theme">
+                            <button id="theme-toggle" class="text-gray-400 hover:text-white p-2">
                                 <svg id="theme-icon" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-11.34l-.7.7M4.04 19.96l-.7-.7M21 12h-1M4 12H3m15.66 5.66l-.7-.7M4.04 4.04l-.7.7"></path>
                                 </svg>
                             </button>
-                            <button id="logout-button" class="text-gray-400 hover:text-white p-2" title="Logout" aria-label="Logout">
+                            <button id="logout-button" class="text-gray-400 hover:text-white p-2">
                                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
                             </button>
                         </div>
                     </div>
 
-                    <!-- New Chat Button -->
                     <div class="p-4">
                         <button id="new-chat-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 transition duration-200">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
@@ -416,21 +363,17 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                         </button>
                     </div>
 
-                    <!-- Contacts List -->
                     <div id="contacts-list" class="flex-1 overflow-y-auto">
                         <p id="no-contacts" class="text-gray-500 text-center p-4">No recent chats.</p>
                     </div>
                 </div>
 
-                <!-- Main Chat Area -->
                 <div class="flex-1 flex flex-col h-full">
-                    <!-- Chat Header -->
                     <div id="chat-header" class="flex items-center p-4 border-b border-gray-700 h-16 flex-shrink-0 bg-gray-800 hidden">
                         <div id="chat-partner-avatar" class="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center font-bold text-white flex-shrink-0"></div>
                         <span id="chat-partner-username" class="ml-3 font-semibold text-white truncate"></span>
                     </div>
 
-                    <!-- Welcome/Empty State -->
                     <div id="chat-welcome" class="flex-1 flex flex-col items-center justify-center text-gray-500 p-8 text-center">
                         <svg class="w-24 h-24 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 5.523-4.477 10-10 10S1 17.523 1 12 5.477 2 11 2s10 4.477 10 10z"></path></svg>
                         <h2 class="text-2xl font-semibold text-gray-400">Welcome to D-Chat</h2>
@@ -438,22 +381,17 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                         <p class="text-sm mt-2">All messages are end-to-end encrypted.</p>
                     </div>
                     
-                    <!-- Messages Container -->
                     <div id="chat-messages-container" class="hidden flex-1 flex flex-col">
-                        <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4">
-                            <!-- Messages will be injected here -->
-                        </div>
+                        <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4"></div>
 
-                        <!-- Message Input -->
                         <form id="message-form" class="p-4 border-t border-gray-700 bg-gray-800 relative">
                             <div class="flex items-center space-x-3">
-                                <button type="button" id="emoji-button" class="emoji-button" title="Insert emoji">😊</button>
+                                <button type="button" id="emoji-button" class="emoji-button">😊</button>
                                 <input type="text" id="message-input" placeholder="Type your message..." autocomplete="off" class="flex-1 px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
                                 <button type="submit" id="send-button" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg p-3 transition duration-200">
                                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
                                 </button>
                             </div>
-                            <!-- Emoji picker -->
                             <div id="emoji-picker" aria-hidden="true">
                                 <div class="emoji-grid" id="emoji-grid"></div>
                             </div>
@@ -475,42 +413,25 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                         </div>
                         <p id="new-chat-status" class="text-sm"></p>
                         <div class="flex justify-end space-x-4">
-                            <button type="button" id="cancel-new-chat" class="px-6 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-white font-semibold transition duration-200">
-                                Cancel
-                            </button>
-                            <button type="submit" id="new-chat-submit" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold transition duration-200">
-                                Start Chat
-                            </button>
+                            <button type="button" id="cancel-new-chat" class="px-6 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-white font-semibold transition duration-200">Cancel</button>
+                            <button type="submit" id="new-chat-submit" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold transition duration-200">Start Chat</button>
                         </div>
                     </div>
                 </form>
             </div>
         </div>
-
     </div>
 
-    <!-- JavaScript -->
-    <script type="module">
-        // ===================================
-        // ---       GLOBALS & CONFIG       ---
-        // ===================================
-        
-        // Initialize Gun with multiple reliable public peers
-        const gun = (typeof window !== 'undefined' && window.Gun) 
-            ? Gun({
-                peers: [
-                    'https://gun.db20.com/gun',           // Reliable public peer
-                    'https://gunjs.herokuapp.com/gun',     // Alternative peer
-                    'https://gun-server-gun.herokuapp.com/gun', // Backup peer
-                    'https://api.gundb.io/gun'             // Official peer
-                ]
-            }) 
-            : null;
-
-        if (!gun) {
-            alert('Gun.js failed to load. Please check your internet connection.');
-            throw new Error('Gun.js initialization failed');
-        }
+    <script>
+        // Initialize Gun
+        const gun = Gun({
+            peers: [
+                'https://gun.db20.com/gun',
+                'https://gunjs.herokuapp.com/gun',
+                'https://gun-server-gun.herokuapp.com/gun',
+                'https://api.gundb.io/gun'
+            ]
+        });
 
         const app = {
             currentUser: null,
@@ -519,39 +440,13 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             userKeys: null,
             listeners: {},
             messageCache: {},
-            isOnline: navigator.onLine,
-            gunConnected: false
+            isOnline: navigator.onLine
         };
 
-        // Monitor connection status
         window.addEventListener('online', () => { app.isOnline = true; });
         window.addEventListener('offline', () => { app.isOnline = false; });
 
-        // Monitor Gun connection
-        gun.on('create', () => {
-            console.log('Gun.js connected');
-            app.gunConnected = true;
-            updateGunStatus();
-        });
-
-        gun.on('out', () => {
-            console.log('Gun.js sending data');
-            app.gunConnected = true;
-            updateGunStatus();
-        });
-
-        function updateGunStatus() {
-            const indicator = document.getElementById('gun-status');
-            if (indicator) {
-                indicator.classList.remove('offline');
-                indicator.querySelector('span').textContent = 'Connected to Gun';
-            }
-        }
-
-        // ===================================
-        // ---       DOM ELEMENTS          ---
-        // ===================================
-        
+        // DOM Elements
         const authPage = document.getElementById('auth-page');
         const chatPage = document.getElementById('chat-page');
         const authStatus = document.getElementById('auth-status');
@@ -589,23 +484,14 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
         const EMOJIS = ['😀','😁','😂','🤣','🙂','🙃','😉','😍','😘','😅','🤔','🤞','👍','👎','🙏','🎉','🔥','🌟','💯','❤️','😎','🤗','😴','🤖','😇','😬','😜','😢','😭','😡','🥳'];
 
-        // ===================================
-        // ---    UTILITY FUNCTIONS        ---
-        // ===================================
-
+        // Utilities
         function showStatus(message, type = 'info') {
-            const statusEl = authStatus;
-            statusEl.innerHTML = '';
-            
-            if (!message) {
-                statusEl.textContent = '';
-                return;
-            }
-
+            authStatus.innerHTML = '';
+            if (!message) return;
             const div = document.createElement('div');
             div.className = `status-message status-${type}`;
             div.textContent = message;
-            statusEl.appendChild(div);
+            authStatus.appendChild(div);
         }
 
         function validateUsername(username) {
@@ -617,7 +503,6 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
         }
 
         function populateEmojis() {
-            if (!emojiGrid) return;
             emojiGrid.innerHTML = '';
             EMOJIS.forEach(e => {
                 const btn = document.createElement('button');
@@ -626,57 +511,32 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                 btn.textContent = e;
                 btn.addEventListener('click', (evt) => {
                     evt.preventDefault();
-                    insertAtCaret(messageInput, e);
-                    hideEmojiPicker();
+                    const start = messageInput.selectionStart || 0;
+                    const end = messageInput.selectionEnd || 0;
+                    const value = messageInput.value || '';
+                    messageInput.value = value.slice(0, start) + e + value.slice(end);
+                    const pos = start + e.length;
+                    messageInput.setSelectionRange(pos, pos);
+                    emojiPicker.style.display = 'none';
                     messageInput.focus();
                 });
                 emojiGrid.appendChild(btn);
             });
         }
 
-        function insertAtCaret(input, text) {
-            const start = input.selectionStart || 0;
-            const end = input.selectionEnd || 0;
-            const value = input.value || '';
-            input.value = value.slice(0, start) + text + value.slice(end);
-            const pos = start + text.length;
-            input.setSelectionRange(pos, pos);
-        }
-
-        function toggleEmojiPicker() {
-            if (!emojiPicker) return;
-            emojiPicker.style.display === 'block' ? hideEmojiPicker() : showEmojiPicker();
-        }
-
-        function showEmojiPicker() {
-            if (!emojiPicker) return;
+        emojiButton?.addEventListener('click', (e) => {
+            e.preventDefault();
             populateEmojis();
-            emojiPicker.style.display = 'block';
-            emojiPicker.setAttribute('aria-hidden', 'false');
-        }
-
-        function hideEmojiPicker() {
-            if (!emojiPicker) return;
-            emojiPicker.style.display = 'none';
-            emojiPicker.setAttribute('aria-hidden', 'true');
-        }
+            emojiPicker.style.display = emojiPicker.style.display === 'block' ? 'none' : 'block';
+        });
 
         document.addEventListener('click', (e) => {
-            if (!emojiPicker || !emojiButton) return;
             if (!emojiPicker.contains(e.target) && !emojiButton.contains(e.target)) {
-                hideEmojiPicker();
+                emojiPicker.style.display = 'none';
             }
         });
 
-        emojiButton?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleEmojiPicker();
-        });
-
-        // ===================================
-        // ---      CRYPTO UTILITIES       ---
-        // ===================================
-        
+        // Crypto
         function arrayBufferToB64(buffer) {
             const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
             let binary = '';
@@ -713,24 +573,12 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
         async function importPubKey(jwk) {
             if (typeof jwk === 'string') jwk = JSON.parse(jwk);
-            return await crypto.subtle.importKey(
-                'jwk',
-                jwk,
-                { name: 'ECDH', namedCurve: 'P-256' },
-                true,
-                []
-            );
+            return await crypto.subtle.importKey('jwk', jwk, { name: 'ECDH', namedCurve: 'P-256' }, true, []);
         }
 
         async function importPrivKey(jwk) {
             if (typeof jwk === 'string') jwk = JSON.parse(jwk);
-            return await crypto.subtle.importKey(
-                'jwk',
-                jwk,
-                { name: 'ECDH', namedCurve: 'P-256' },
-                true,
-                ['deriveKey']
-            );
+            return await crypto.subtle.importKey('jwk', jwk, { name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveKey']);
         }
 
         async function deriveSharedKey(myPrivateKey, partnerPublicKey) {
@@ -746,26 +594,15 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
         async function encryptMessage(sharedKey, plaintext) {
             const iv = crypto.getRandomValues(new Uint8Array(12));
             const encodedText = textToArrayBuffer(plaintext);
-            const ciphertext = await crypto.subtle.encrypt(
-                { name: 'AES-GCM', iv: iv },
-                sharedKey,
-                encodedText
-            );
-            return {
-                ct: arrayBufferToB64(ciphertext),
-                iv: arrayBufferToB64(iv)
-            };
+            const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, sharedKey, encodedText);
+            return { ct: arrayBufferToB64(ciphertext), iv: arrayBufferToB64(iv) };
         }
 
         async function decryptMessage(sharedKey, ct_b64, iv_b64) {
             try {
                 const ciphertext = b64ToArrayBuffer(ct_b64);
                 const iv = new Uint8Array(b64ToArrayBuffer(iv_b64));
-                const decrypted = await crypto.subtle.decrypt(
-                    { name: 'AES-GCM', iv: iv },
-                    sharedKey,
-                    ciphertext
-                );
+                const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, sharedKey, ciphertext);
                 return arrayBufferToText(decrypted);
             } catch (e) {
                 console.error("Decryption error:", e);
@@ -773,18 +610,13 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             }
         }
 
-        // ===================================
-        // ---       AUTH LOGIC            ---
-        // ===================================
-
+        // Auth
         function switchTab(tab) {
             const isLogin = tab === 'login';
             loginForm.classList.toggle('hidden', !isLogin);
             signupForm.classList.toggle('hidden', isLogin);
-            
             tabLogin.classList.toggle('active', isLogin);
             tabSignup.classList.toggle('active', !isLogin);
-            
             showStatus('');
         }
 
@@ -806,43 +638,28 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             showStatus('Checking username...', 'info');
 
             try {
-                // Check if username exists
                 const userExists = await fetchUserData(username);
-
-                if (userExists && userExists.pubKey) {
+                if (userExists) {
                     showStatus('Username already taken.', 'error');
                     signupSubmit.disabled = false;
                     return;
                 }
 
-                showStatus('Generating encryption keys...', 'info');
+                showStatus('Generating keys...', 'info');
                 const keyPair = await generateKeys();
                 const pubKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
                 const privKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
 
-                const encryptedPrivKey = CryptoJS.AES.encrypt(
-                    JSON.stringify(privKeyJwk),
-                    password
-                ).toString();
+                const encryptedPrivKey = CryptoJS.AES.encrypt(JSON.stringify(privKeyJwk), password).toString();
 
                 showStatus('Creating account...', 'info');
-                
-                // Create user with all fields
                 const userNode = gun.get('users').get(username);
-                userNode.put({
-                    pubKey: JSON.stringify(pubKeyJwk),
-                    privKey: encryptedPrivKey,
-                    createdAt: Date.now(),
-                    version: 1
-                });
-
-                // Create empty chats object
+                userNode.put({ pubKey: JSON.stringify(pubKeyJwk), privKey: encryptedPrivKey, createdAt: Date.now() });
                 userNode.get('chats').put({});
 
-                // Wait for data to propagate
                 await new Promise(resolve => setTimeout(resolve, 2000));
 
-                showStatus('✅ Signup successful! Redirecting...', 'success');
+                showStatus('✅ Signup successful!', 'success');
                 await new Promise(resolve => setTimeout(resolve, 1500));
                 
                 signupForm.reset();
@@ -854,14 +671,14 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
             } catch (err) {
                 console.error('Signup error:', err);
-                showStatus('Signup failed: ' + err.message, 'error');
+                showStatus('Signup failed', 'error');
                 signupSubmit.disabled = false;
             }
         }
 
         async function handleLogin(e) {
             e.preventDefault();
-            const username = document.getElementById('login-username').value.trim();
+            const username = document.getElementById('login-username').value.trim().toLowerCase();
             const password = document.getElementById('login-password').value;
 
             if (!username || !password) {
@@ -872,17 +689,14 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             loginSubmit.disabled = true;
             showStatus('Logging in...', 'info');
 
-            const timeout = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Login timeout')), 10000)
-            );
-
             try {
-                const userData = await Promise.race([
-                    new Promise(resolve => {
-                        gun.get('users').get(username).once(resolve);
-                    }),
-                    timeout
-                ]);
+                const userData = await new Promise((resolve) => {
+                    const timeout = setTimeout(() => resolve(null), 8000);
+                    gun.get('users').get(username).once(data => {
+                        clearTimeout(timeout);
+                        resolve(data);
+                    });
+                });
 
                 if (!userData || !userData.privKey) {
                     showStatus('Invalid username or password.', 'error');
@@ -890,8 +704,7 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                     return;
                 }
 
-                const decryptedStr = CryptoJS.AES.decrypt(userData.privKey, password)
-                    .toString(CryptoJS.enc.Utf8);
+                const decryptedStr = CryptoJS.AES.decrypt(userData.privKey, password).toString(CryptoJS.enc.Utf8);
                 
                 if (!decryptedStr) {
                     showStatus('Invalid username or password.', 'error');
@@ -900,9 +713,7 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                 }
 
                 const privKeyJwk = JSON.parse(decryptedStr);
-                const pubKeyJwk = typeof userData.pubKey === 'string' 
-                    ? JSON.parse(userData.pubKey) 
-                    : userData.pubKey;
+                const pubKeyJwk = typeof userData.pubKey === 'string' ? JSON.parse(userData.pubKey) : userData.pubKey;
 
                 showStatus('Importing keys...', 'info');
                 app.userKeys = {
@@ -922,18 +733,16 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
             } catch (err) {
                 console.error('Login error:', err);
-                showStatus(err.message || 'Login failed.', 'error');
+                showStatus('Login failed.', 'error');
                 loginSubmit.disabled = false;
             }
         }
 
         function handleLogout() {
-            // Detach all listeners
             Object.values(app.listeners).forEach(off => {
                 try { if (typeof off === 'function') off(); } catch (e) {}
             });
             app.listeners = {};
-
             sessionStorage.clear();
             app.currentUser = null;
             app.userKeys = null;
@@ -944,16 +753,12 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             contactsList.innerHTML = '';
             chatMessages.innerHTML = '';
             noContactsEl.classList.remove('hidden');
-
             chatPage.classList.add('hidden');
             authPage.classList.remove('hidden');
             switchTab('login');
         }
 
-        // ===================================
-        // ---       CHAT LOGIC            ---
-        // ===================================
-
+        // Chat
         async function initChatPage() {
             authPage.classList.add('hidden');
             chatPage.classList.remove('hidden');
@@ -964,24 +769,19 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
         function loadUserChats() {
             if (app.listeners.chatsLoader) app.listeners.chatsLoader();
-
             contactsList.innerHTML = '';
             noContactsEl.classList.remove('hidden');
 
-            const chatsRef = gun.get('users').get(app.currentUser).get('chats');
-            
-            const offFunc = chatsRef.map().on((val, key) => {
+            const offFunc = gun.get('users').get(app.currentUser).get('chats').map().on((val, key) => {
                 if (!val || key === '_') return;
-                const partner = key;
-                if (partner !== app.currentUser) {
-                    addContactToList(partner, key);
+                if (key !== app.currentUser) {
+                    addContactToList(key);
                 }
             });
 
             app.listeners.chatsLoader = offFunc;
         }
 
-        // FIXED: Improved user search with multiple retry attempts
         async function handleNewChat(e) {
             e.preventDefault();
             const username = document.getElementById('new-chat-username').value.trim().toLowerCase();
@@ -1004,38 +804,25 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             newChatStatus.className = 'text-sm status-info';
 
             try {
-                // Search with aggressive retries for public peers
                 let userData = null;
                 for (let attempt = 1; attempt <= 4; attempt++) {
                     newChatStatus.textContent = `Searching (${attempt}/4)...`;
-                    
                     userData = await fetchUserData(username);
-                    
-                    if (userData && userData.pubKey) {
-                        break;
-                    }
-                    
-                    // Wait before retry
-                    if (attempt < 4) {
-                        await new Promise(resolve => setTimeout(resolve, 800));
-                    }
+                    if (userData) break;
+                    if (attempt < 4) await new Promise(resolve => setTimeout(resolve, 800));
                 }
 
-                if (!userData || !userData.pubKey) {
-                    newChatStatus.textContent = 'User not found. Verify username and try again.';
+                if (!userData) {
+                    newChatStatus.textContent = 'User not found.';
                     newChatStatus.className = 'text-sm status-error';
                     newChatSubmit.disabled = false;
                     return;
                 }
 
-                newChatStatus.textContent = 'Creating chat...';
-                
-                // Create chat references
                 gun.get('users').get(app.currentUser).get('chats').get(username).put({ createdAt: Date.now() });
                 gun.get('users').get(username).get('chats').get(app.currentUser).put({ createdAt: Date.now() });
 
-                // Wait for sync
-                await new Promise(resolve => setTimeout(resolve, 1200));
+                await new Promise(resolve => setTimeout(resolve, 1000));
 
                 addContactToList(username);
                 newChatModal.classList.add('hidden');
@@ -1047,60 +834,36 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
             } catch (err) {
                 console.error('New chat error:', err);
-                newChatStatus.textContent = 'Error: ' + (err.message || 'Search failed');
+                newChatStatus.textContent = 'Search failed.';
                 newChatStatus.className = 'text-sm status-error';
                 newChatSubmit.disabled = false;
             }
         }
 
-        // Fetch user data with proper Gun syntax for public peers
         function fetchUserData(username) {
             return new Promise((resolve) => {
                 let found = false;
-                let timeoutId;
-                
-                const cleanup = () => {
-                    clearTimeout(timeoutId);
-                    found = true;
-                };
-
-                timeoutId = setTimeout(() => {
+                const timeout = setTimeout(() => {
                     if (!found) {
                         found = true;
                         resolve(null);
                     }
-                }, 4000);
+                }, 3000);
 
-                // Strategy 1: Try to fetch complete user object
-                gun.get('users').get(username).once((userData, key) => {
+                gun.get('users').get(username).once((userData) => {
                     if (found) return;
-                    
                     if (userData && userData.pubKey) {
-                        cleanup();
+                        found = true;
+                        clearTimeout(timeout);
                         resolve({ pubKey: userData.pubKey });
-                        return;
                     }
-
-                    // Strategy 2: If not found, try direct pubKey
-                    if (!userData) {
-                        gun.get('users').get(username).get('pubKey').once((pubKey) => {
-                            if (found) return;
-                            
-                            if (pubKey && typeof pubKey === 'string' && pubKey.length > 20) {
-                                cleanup();
-                                resolve({ pubKey: pubKey });
-                            }
-                        });
-                    }
-                }, { wait: 500 });
+                });
             });
         }
 
         function addContactToList(username) {
             noContactsEl.classList.add('hidden');
-            
-            const existing = document.getElementById(`contact-${username}`);
-            if (existing) return;
+            if (document.getElementById(`contact-${username}`)) return;
 
             const contactEl = document.createElement('div');
             contactEl.id = `contact-${username}`;
@@ -1119,10 +882,125 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             contactsList.prepend(contactEl);
         }
 
-        // ===================================
-        // ---    THEME & INITIALIZATION   ---
-        // ===================================
+        async function openChat(partnerUsername) {
+            try {
+                const pubKeyData = await new Promise((resolve) => {
+                    const timeout = setTimeout(() => resolve(null), 6000);
+                    gun.get('users').get(partnerUsername).get('pubKey').once(data => {
+                        clearTimeout(timeout);
+                        resolve(data);
+                    });
+                });
 
+                if (!pubKeyData) throw new Error('Could not fetch keys');
+
+                const pubKeyJwk = typeof pubKeyData === 'string' ? JSON.parse(pubKeyData) : pubKeyData;
+                const partnerPubKey = await importPubKey(pubKeyJwk);
+                const sharedKey = await deriveSharedKey(app.userKeys.privateKey, partnerPubKey);
+                app.sharedKeys[partnerUsername] = sharedKey;
+
+                if (app.listeners.messagesLoader) app.listeners.messagesLoader();
+
+                app.currentChat = {
+                    partner: partnerUsername,
+                    id: `${[app.currentUser, partnerUsername].sort().join(':')}`
+                };
+
+                chatWelcome.classList.add('hidden');
+                chatMessagesContainer.classList.remove('hidden');
+                chatHeader.classList.remove('hidden');
+
+                chatPartnerUsername.textContent = partnerUsername;
+                chatPartnerAvatar.textContent = partnerUsername.charAt(0).toUpperCase();
+                chatMessages.innerHTML = '';
+                app.messageCache = {};
+
+                document.querySelectorAll('.contact-item').forEach(el => el.classList.remove('active'));
+                document.getElementById(`contact-${partnerUsername}`)?.classList.add('active');
+
+                const offFunc = gun.get('chats').get(app.currentChat.id).map().on((msg, msgKey) => {
+                    if (!msg || !msg.sender || msgKey === '_') return;
+                    if (!app.messageCache[msgKey]) {
+                        app.messageCache[msgKey] = true;
+                        displayMessage(msg);
+                    }
+                });
+
+                app.listeners.messagesLoader = offFunc;
+
+            } catch (err) {
+                console.error('Chat open error:', err);
+                alert('Error opening chat');
+            }
+        }
+
+        async function displayMessage(msg) {
+            const isMe = msg.sender === app.currentUser;
+            let plaintext = '...';
+
+            if (isMe && msg.text) {
+                plaintext = msg.text;
+            } else if (!isMe && msg.ct && msg.iv) {
+                try {
+                    const sharedKey = app.sharedKeys[msg.sender];
+                    plaintext = await decryptMessage(sharedKey, msg.ct, msg.iv);
+                } catch (e) {
+                    plaintext = '🔒 Decrypt failed';
+                }
+            }
+
+            const msgEl = document.createElement('div');
+            msgEl.className = `flex ${isMe ? 'justify-end' : 'justify-start'} mb-2`;
+
+            const safeText = plaintext.replace(/[<>]/g, m => m === '<' ? '&lt;' : '&gt;');
+            const timestamp = new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            msgEl.innerHTML = `
+                <div class="flex items-end gap-2 max-w-xs md:max-w-md">
+                    <div class="message-bubble ${isMe ? 'sent' : 'received'}">
+                        <p style="word-break: break-word;">${safeText}</p>
+                    </div>
+                    <span class="message-time">${timestamp}</span>
+                </div>
+            `;
+
+            chatMessages.appendChild(msgEl);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // THIS WAS MISSING - ADD THIS FUNCTION
+        async function handleSendMessage(e) {
+            e.preventDefault();
+            const text = messageInput.value.trim();
+
+            if (!text || !app.currentChat) return;
+
+            sendButton.disabled = true;
+
+            try {
+                const sharedKey = app.sharedKeys[app.currentChat.partner];
+                const encrypted = await encryptMessage(sharedKey, text);
+
+                gun.get('chats').get(app.currentChat.id).set({
+                    sender: app.currentUser,
+                    ct: encrypted.ct,
+                    iv: encrypted.iv,
+                    timestamp: Date.now(),
+                    text: text
+                });
+
+                messageInput.value = '';
+                sendButton.disabled = false;
+                messageInput.focus();
+
+            } catch (err) {
+                console.error('Send error:', err);
+                alert('Failed to send message.');
+                sendButton.disabled = false;
+            }
+        }
+
+        // Theme
         function applyTheme(theme) {
             const isLight = theme === 'light';
             document.documentElement.classList.toggle('light', isLight);
@@ -1145,7 +1023,6 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                 applyTheme(isDark ? 'light' : 'dark');
             });
 
-            // Session restore
             const username = sessionStorage.getItem('currentUser');
             const privKeyStr = sessionStorage.getItem('privKey');
             const pubKeyStr = sessionStorage.getItem('pubKey');
@@ -1164,7 +1041,6 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                 }
             }
 
-            // Event listeners
             tabLogin.addEventListener('click', () => switchTab('login'));
             tabSignup.addEventListener('click', () => switchTab('signup'));
             loginForm.addEventListener('submit', handleLogin);
@@ -1184,10 +1060,7 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             messageForm.addEventListener('submit', handleSendMessage);
         }
 
-        initApp().catch(e => {
-            console.error('App init failed:', e);
-            showStatus('Failed to initialize app.', 'error');
-        });
+        initApp();
     </script>
 </body>
 </html>
