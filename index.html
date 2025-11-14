@@ -717,8 +717,9 @@ button[type="submit"]:hover, #new-chat-button:hover {
 
         async function handleSignup(e) {
             e.preventDefault();
-            const username = document.getElementById('signup-username').value.trim();
+            const rawUsername = document.getElementById('signup-username').value.trim();
             const password = document.getElementById('signup-password').value;
+            const username = rawUsername.toLowerCase(); // normalize to lowercase
 
             if (!username || !password) {
                 showStatus("Username and password are required.", true);
@@ -740,17 +741,15 @@ button[type="submit"]:hover, #new-chat-button:hover {
                     const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
                     const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
 
-                    // Proper password-based AES-GCM wrapping
                     showStatus("Securing private key...");
                     const wrapped = await wrapPrivateKeyJWK(privateKeyJwk, password);
 
                     const userNode = gun.get('users').get(username);
                     userNode.put({
                         pubKey: JSON.stringify(publicKeyJwk),
-                        privKey: JSON.stringify(wrapped) // store as JSON string
+                        privKey: JSON.stringify(wrapped)
                     });
 
-                    // No plaintext stored in Gun for chats/messages.
                     showStatus("Signup successful! Please log in.");
                     switchTab('login');
                     loginForm.reset();
@@ -767,7 +766,7 @@ button[type="submit"]:hover, #new-chat-button:hover {
 
         async function handleLogin(e) {
             e.preventDefault();
-            const username = document.getElementById('login-username').value.trim();
+            const username = document.getElementById('login-username').value.trim().toLowerCase(); // normalize
             const password = document.getElementById('login-password').value;
 
             if (!username || !password) {
@@ -784,7 +783,6 @@ button[type="submit"]:hover, #new-chat-button:hover {
                 }
 
                 try {
-                    // privKey was stored as JSON string with ct/iv/salt
                     const wrapped = (typeof data.privKey === 'string') ? JSON.parse(data.privKey) : data.privKey;
                     let privateKeyJwk;
                     try {
@@ -796,7 +794,6 @@ button[type="submit"]:hover, #new-chat-button:hover {
 
                     const publicKeyJwk = (typeof data.pubKey === 'string') ? JSON.parse(data.pubKey) : data.pubKey;
 
-                    // Store in session (sessionStorage cleared on logout)
                     sessionStorage.setItem('currentUser', username);
                     sessionStorage.setItem('privKey', JSON.stringify(privateKeyJwk));
                     sessionStorage.setItem('pubKey', JSON.stringify(publicKeyJwk));
@@ -911,7 +908,8 @@ button[type="submit"]:hover, #new-chat-button:hover {
 
         async function handleNewChat(e) {
             e.preventDefault();
-            const partnerUsername = document.getElementById('new-chat-username').value.trim();
+            const partnerRaw = document.getElementById('new-chat-username').value.trim();
+            const partnerUsername = partnerRaw.toLowerCase(); // normalize for lookup
             newChatStatus.textContent = '';
 
             if (!partnerUsername) {
@@ -924,11 +922,13 @@ button[type="submit"]:hover, #new-chat-button:hover {
             }
             newChatStatus.textContent = 'Searching for user...';
 
-            gun.get('users').get(partnerUsername).get('pubKey').once(async (pubKey) => {
-                if (!pubKey) {
+            // Read full user node to be robust against how Gun returns pubKey
+            gun.get('users').get(partnerUsername).once(async (data) => {
+                if (!data || !data.pubKey) {
                     newChatStatus.textContent = 'User not found.';
                     return;
                 }
+
                 const chatId = [app.currentUser, partnerUsername].sort().join(':');
                 gun.get('users').get(app.currentUser).get('chats').set(chatId);
                 gun.get('users').get(partnerUsername).get('chats').set(chatId);
@@ -944,11 +944,13 @@ button[type="submit"]:hover, #new-chat-button:hover {
         async function getSharedKey(partnerUsername) {
             if (app.sharedKeys[partnerUsername]) return app.sharedKeys[partnerUsername];
 
-            let partnerPubKeyJwk = await new Promise(resolve => {
-                gun.get('users').get(partnerUsername).get('pubKey').once(resolve);
+            // Fetch full user node then extract pubKey to avoid inconsistent returns
+            let userNode = await new Promise(resolve => {
+                gun.get('users').get(partnerUsername).once(resolve);
             });
 
-            if (!partnerPubKeyJwk) throw new Error("Could not fetch partner's public key.");
+            if (!userNode || !userNode.pubKey) throw new Error("Could not fetch partner's public key.");
+            let partnerPubKeyJwk = userNode.pubKey;
             if (typeof partnerPubKeyJwk === 'string') partnerPubKeyJwk = JSON.parse(partnerPubKeyJwk);
 
             const partnerPubKey = await importPubKey(partnerPubKeyJwk);
