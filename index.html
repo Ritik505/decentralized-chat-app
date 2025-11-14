@@ -495,12 +495,14 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
         // ---       GLOBALS & CONFIG       ---
         // ===================================
         
-        // Initialize Gun with multiple peers for reliability
+        // Initialize Gun with multiple reliable public peers
         const gun = (typeof window !== 'undefined' && window.Gun) 
             ? Gun({
                 peers: [
-                    'https://gun-man-web.onrender.com/gun',
-                    'http://localhost:8765/gun' // Local fallback
+                    'https://gun.db20.com/gun',           // Reliable public peer
+                    'https://gunjs.herokuapp.com/gun',     // Alternative peer
+                    'https://gun-server-gun.herokuapp.com/gun', // Backup peer
+                    'https://api.gundb.io/gun'             // Official peer
                 ]
             }) 
             : null;
@@ -515,14 +517,36 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             currentChat: null,
             sharedKeys: {},
             userKeys: null,
-            listeners: {}, // Track active listeners
-            messageCache: {}, // Cache messages to avoid duplicates
-            isOnline: navigator.onLine
+            listeners: {},
+            messageCache: {},
+            isOnline: navigator.onLine,
+            gunConnected: false
         };
 
         // Monitor connection status
         window.addEventListener('online', () => { app.isOnline = true; });
         window.addEventListener('offline', () => { app.isOnline = false; });
+
+        // Monitor Gun connection
+        gun.on('create', () => {
+            console.log('Gun.js connected');
+            app.gunConnected = true;
+            updateGunStatus();
+        });
+
+        gun.on('out', () => {
+            console.log('Gun.js sending data');
+            app.gunConnected = true;
+            updateGunStatus();
+        });
+
+        function updateGunStatus() {
+            const indicator = document.getElementById('gun-status');
+            if (indicator) {
+                indicator.classList.remove('offline');
+                indicator.querySelector('span').textContent = 'Connected to Gun';
+            }
+        }
 
         // ===================================
         // ---       DOM ELEMENTS          ---
@@ -766,7 +790,7 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
         async function handleSignup(e) {
             e.preventDefault();
-            const username = document.getElementById('signup-username').value.trim();
+            const username = document.getElementById('signup-username').value.trim().toLowerCase();
             const password = document.getElementById('signup-password').value;
 
             if (!validateUsername(username)) {
@@ -779,30 +803,19 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             }
 
             signupSubmit.disabled = true;
-            showStatus('Checking username availability...', 'info');
-
-            // Timeout-wrapped Gun call to prevent hanging
-            const timeout = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Request timeout')), 10000)
-            );
+            showStatus('Checking username...', 'info');
 
             try {
-                const userExists = await Promise.race([
-                    new Promise(resolve => {
-                        gun.get('users').get(username).once(data => {
-                            resolve(data && (data.pubKey || data.privKey));
-                        });
-                    }),
-                    timeout
-                ]);
+                // Check if username exists
+                const userExists = await fetchUserData(username);
 
-                if (userExists) {
+                if (userExists && userExists.pubKey) {
                     showStatus('Username already taken.', 'error');
                     signupSubmit.disabled = false;
                     return;
                 }
 
-                showStatus('Generating keys...', 'info');
+                showStatus('Generating encryption keys...', 'info');
                 const keyPair = await generateKeys();
                 const pubKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
                 const privKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
@@ -813,18 +826,23 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
                 ).toString();
 
                 showStatus('Creating account...', 'info');
+                
+                // Create user with all fields
                 const userNode = gun.get('users').get(username);
                 userNode.put({
                     pubKey: JSON.stringify(pubKeyJwk),
                     privKey: encryptedPrivKey,
-                    createdAt: Date.now()
-                }, null, { opt: { cert: Date.now() } });
+                    createdAt: Date.now(),
+                    version: 1
+                });
 
+                // Create empty chats object
                 userNode.get('chats').put({});
 
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Brief delay for Gun sync
+                // Wait for data to propagate
+                await new Promise(resolve => setTimeout(resolve, 2000));
 
-                showStatus('Signup successful! Redirecting to login...', 'success');
+                showStatus('✅ Signup successful! Redirecting...', 'success');
                 await new Promise(resolve => setTimeout(resolve, 1500));
                 
                 signupForm.reset();
@@ -836,7 +854,7 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
             } catch (err) {
                 console.error('Signup error:', err);
-                showStatus(err.message || 'Signup failed. Please try again.', 'error');
+                showStatus('Signup failed: ' + err.message, 'error');
                 signupSubmit.disabled = false;
             }
         }
@@ -963,36 +981,10 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             app.listeners.chatsLoader = offFunc;
         }
 
-        function addContactToList(username, chatId) {
-            noContactsEl.classList.add('hidden');
-
-            const existing = document.getElementById(`contact-${username}`);
-            if (existing) return;
-
-            const contactEl = document.createElement('div');
-            contactEl.id = `contact-${username}`;
-            contactEl.className = 'contact-item';
-            contactEl.innerHTML = `
-                <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0" style="background-color: hsl(${username.charCodeAt(0) * 10}, 70%, 50%)">
-                    ${username.charAt(0).toUpperCase()}
-                </div>
-                <div class="ml-3 flex-1 min-w-0">
-                    <p class="font-semibold truncate">${username}</p>
-                    <p class="text-sm truncate">Tap to open</p>
-                </div>
-            `;
-
-            contactEl.addEventListener('click', () => {
-                openChat(username);
-            });
-
-            contactsList.prepend(contactEl);
-        }
-
         // FIXED: Improved user search with multiple retry attempts
         async function handleNewChat(e) {
             e.preventDefault();
-            const username = document.getElementById('new-chat-username').value.trim();
+            const username = document.getElementById('new-chat-username').value.trim().toLowerCase();
             newChatStatus.textContent = '';
 
             if (!username) {
@@ -1012,25 +1004,40 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             newChatStatus.className = 'text-sm status-info';
 
             try {
-                // Search with multiple strategies
-                const userData = await searchUserMultiStrategy(username);
+                // Search with aggressive retries for public peers
+                let userData = null;
+                for (let attempt = 1; attempt <= 4; attempt++) {
+                    newChatStatus.textContent = `Searching (${attempt}/4)...`;
+                    
+                    userData = await fetchUserData(username);
+                    
+                    if (userData && userData.pubKey) {
+                        break;
+                    }
+                    
+                    // Wait before retry
+                    if (attempt < 4) {
+                        await new Promise(resolve => setTimeout(resolve, 800));
+                    }
+                }
 
                 if (!userData || !userData.pubKey) {
-                    newChatStatus.textContent = 'User not found. Please check the username.';
+                    newChatStatus.textContent = 'User not found. Verify username and try again.';
                     newChatStatus.className = 'text-sm status-error';
                     newChatSubmit.disabled = false;
                     return;
                 }
 
-                newChatStatus.textContent = 'Starting chat...';
+                newChatStatus.textContent = 'Creating chat...';
                 
-                // Add to chats
-                gun.get('users').get(app.currentUser).get('chats').get(username).put(true);
-                gun.get('users').get(username).get('chats').get(app.currentUser).put(true);
+                // Create chat references
+                gun.get('users').get(app.currentUser).get('chats').get(username).put({ createdAt: Date.now() });
+                gun.get('users').get(username).get('chats').get(app.currentUser).put({ createdAt: Date.now() });
 
-                await new Promise(resolve => setTimeout(resolve, 800));
+                // Wait for sync
+                await new Promise(resolve => setTimeout(resolve, 1200));
 
-                addContactToList(username, username);
+                addContactToList(username);
                 newChatModal.classList.add('hidden');
                 newChatForm.reset();
                 newChatStatus.textContent = '';
@@ -1040,222 +1047,76 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
             } catch (err) {
                 console.error('New chat error:', err);
-                newChatStatus.textContent = err.message || 'Search failed. Please try again.';
+                newChatStatus.textContent = 'Error: ' + (err.message || 'Search failed');
                 newChatStatus.className = 'text-sm status-error';
                 newChatSubmit.disabled = false;
             }
         }
 
-        async function searchUserMultiStrategy(username) {
-            // Strategy 1: Direct user node fetch with extended timeout
-            let result = await new Promise((resolve) => {
-                const timeout = setTimeout(() => resolve(null), 6000);
+        // Fetch user data with proper Gun syntax for public peers
+        function fetchUserData(username) {
+            return new Promise((resolve) => {
+                let found = false;
+                let timeoutId;
                 
-                gun.get('users').get(username).once((data) => {
-                    clearTimeout(timeout);
-                    if (data && data.pubKey) {
-                        resolve({ pubKey: data.pubKey });
-                    } else {
-                        resolve(null);
-                    }
-                });
-            });
-
-            if (result) return result;
-
-            // Strategy 2: Try pubKey field directly
-            result = await new Promise((resolve) => {
-                const timeout = setTimeout(() => resolve(null), 5000);
-                
-                gun.get('users').get(username).get('pubKey').once((pubKey) => {
-                    clearTimeout(timeout);
-                    if (pubKey && pubKey.length > 5) {
-                        resolve({ pubKey: pubKey });
-                    } else {
-                        resolve(null);
-                    }
-                });
-            });
-
-            if (result) return result;
-
-            // Strategy 3: Try privKey field (if pubKey doesn't exist, user exists)
-            result = await new Promise((resolve) => {
-                const timeout = setTimeout(() => resolve(null), 5000);
-                
-                gun.get('users').get(username).get('privKey').once((privKey) => {
-                    clearTimeout(timeout);
-                    if (privKey && privKey.length > 10) {
-                        // User exists, try to get pubKey again
-                        gun.get('users').get(username).get('pubKey').once((pubKey) => {
-                            if (pubKey && pubKey.length > 5) {
-                                resolve({ pubKey: pubKey });
-                            } else {
-                                resolve({ pubKey: 'exists' }); // Fallback
-                            }
-                        });
-                    } else {
-                        resolve(null);
-                    }
-                });
-            });
-
-            return result;
-        }
-
-        async function getSharedKey(partnerUsername) {
-            if (app.sharedKeys[partnerUsername]) {
-                return app.sharedKeys[partnerUsername];
-            }
-
-            const timeout = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Key fetch timeout')), 12000)
-            );
-
-            let pubKeyJwk = await Promise.race([
-                new Promise(resolve => {
-                    gun.get('users').get(partnerUsername).get('pubKey').once(data => {
-                        resolve(data);
-                    });
-                }),
-                timeout
-            ]);
-
-            if (!pubKeyJwk) {
-                throw new Error(`Could not fetch keys for ${partnerUsername}`);
-            }
-
-            if (typeof pubKeyJwk === 'string') {
-                pubKeyJwk = JSON.parse(pubKeyJwk);
-            }
-
-            const partnerPubKey = await importPubKey(pubKeyJwk);
-            const sharedKey = await deriveSharedKey(app.userKeys.privateKey, partnerPubKey);
-            app.sharedKeys[partnerUsername] = sharedKey;
-
-            return sharedKey;
-        }
-
-        async function openChat(partnerUsername) {
-            try {
-                await getSharedKey(partnerUsername);
-
-                if (app.listeners.messagesLoader) {
-                    app.listeners.messagesLoader();
-                }
-
-                app.currentChat = {
-                    partner: partnerUsername,
-                    id: `${[app.currentUser, partnerUsername].sort().join(':')}`
+                const cleanup = () => {
+                    clearTimeout(timeoutId);
+                    found = true;
                 };
 
-                chatWelcome.classList.add('hidden');
-                chatMessagesContainer.classList.remove('hidden');
-                chatHeader.classList.remove('hidden');
-
-                chatPartnerUsername.textContent = partnerUsername;
-                chatPartnerAvatar.textContent = partnerUsername.charAt(0).toUpperCase();
-                chatMessages.innerHTML = '';
-                app.messageCache = {};
-
-                document.querySelectorAll('.contact-item').forEach(el => {
-                    el.classList.remove('active');
-                });
-                document.getElementById(`contact-${partnerUsername}`)?.classList.add('active');
-
-                const chatRef = gun.get('chats').get(app.currentChat.id);
-                const offFunc = chatRef.map().on((msg, msgKey) => {
-                    if (!msg || !msg.sender || msgKey === '_') return;
-                    if ((msg.ct || msg.text) && !app.messageCache[msgKey]) {
-                        app.messageCache[msgKey] = true;
-                        displayMessage(msg);
+                timeoutId = setTimeout(() => {
+                    if (!found) {
+                        found = true;
+                        resolve(null);
                     }
-                });
+                }, 4000);
 
-                app.listeners.messagesLoader = offFunc;
+                // Strategy 1: Try to fetch complete user object
+                gun.get('users').get(username).once((userData, key) => {
+                    if (found) return;
+                    
+                    if (userData && userData.pubKey) {
+                        cleanup();
+                        resolve({ pubKey: userData.pubKey });
+                        return;
+                    }
 
-            } catch (err) {
-                console.error('Chat open error:', err);
-                alert('Error opening chat: ' + err.message);
-            }
+                    // Strategy 2: If not found, try direct pubKey
+                    if (!userData) {
+                        gun.get('users').get(username).get('pubKey').once((pubKey) => {
+                            if (found) return;
+                            
+                            if (pubKey && typeof pubKey === 'string' && pubKey.length > 20) {
+                                cleanup();
+                                resolve({ pubKey: pubKey });
+                            }
+                        });
+                    }
+                }, { wait: 500 });
+            });
         }
 
-        async function displayMessage(msg) {
-            const isMe = msg.sender === app.currentUser;
-            let plaintext = '...';
+        function addContactToList(username) {
+            noContactsEl.classList.add('hidden');
+            
+            const existing = document.getElementById(`contact-${username}`);
+            if (existing) return;
 
-            if (isMe && msg.text) {
-                plaintext = msg.text;
-            } else if (!isMe && msg.ct && msg.iv) {
-                try {
-                    const sharedKey = await getSharedKey(msg.sender);
-                    plaintext = await decryptMessage(sharedKey, msg.ct, msg.iv);
-                } catch (e) {
-                    plaintext = '🔒 Failed to decrypt';
-                }
-            } else if (isMe && !msg.text && msg.ct && msg.iv) {
-                try {
-                    const sharedKey = await getSharedKey(app.currentChat.partner);
-                    plaintext = await decryptMessage(sharedKey, msg.ct, msg.iv);
-                } catch (e) {
-                    plaintext = '🔒 Failed to decrypt';
-                }
-            } else {
-                return;
-            }
-
-            const msgEl = document.createElement('div');
-            msgEl.className = `flex ${isMe ? 'justify-end' : 'justify-start'} mb-2`;
-
-            const safeText = plaintext.replace(/[<>]/g, m => m === '<' ? '&lt;' : '&gt;');
-            const timestamp = new Date(msg.timestamp || Date.now()).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-
-            msgEl.innerHTML = `
-                <div class="flex items-end gap-2 max-w-xs md:max-w-md">
-                    <div class="message-bubble ${isMe ? 'sent' : 'received'}">
-                        <p style="word-break: break-word;">${safeText}</p>
-                    </div>
-                    <span class="message-time">${timestamp}</span>
+            const contactEl = document.createElement('div');
+            contactEl.id = `contact-${username}`;
+            contactEl.className = 'contact-item';
+            contactEl.innerHTML = `
+                <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0" style="background-color: hsl(${username.charCodeAt(0) * 10}, 70%, 50%)">
+                    ${username.charAt(0).toUpperCase()}
+                </div>
+                <div class="ml-3 flex-1 min-w-0">
+                    <p class="font-semibold truncate">${username}</p>
+                    <p class="text-sm truncate">Tap to open</p>
                 </div>
             `;
 
-            chatMessages.appendChild(msgEl);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        async function handleSendMessage(e) {
-            e.preventDefault();
-            const text = messageInput.value.trim();
-
-            if (!text || !app.currentChat) return;
-
-            sendButton.disabled = true;
-
-            try {
-                const sharedKey = await getSharedKey(app.currentChat.partner);
-                const encrypted = await encryptMessage(sharedKey, text);
-                const message = {
-                    sender: app.currentUser,
-                    ct: encrypted.ct,
-                    iv: encrypted.iv,
-                    timestamp: Date.now(),
-                    text: text
-                };
-
-                gun.get('chats').get(app.currentChat.id).set(message);
-
-                messageInput.value = '';
-                sendButton.disabled = false;
-                messageInput.focus();
-
-            } catch (err) {
-                console.error('Send error:', err);
-                alert('Failed to send message.');
-                sendButton.disabled = false;
-            }
+            contactEl.addEventListener('click', () => openChat(username));
+            contactsList.prepend(contactEl);
         }
 
         // ===================================
