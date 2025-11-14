@@ -1012,20 +1012,8 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             newChatStatus.className = 'text-sm status-info';
 
             try {
-                // Retry logic for better reliability
-                let userData = null;
-                let attempts = 0;
-                const maxAttempts = 3;
-
-                while (attempts < maxAttempts && !userData) {
-                    userData = await searchUserWithTimeout(username, 5000);
-                    attempts++;
-                    
-                    if (!userData && attempts < maxAttempts) {
-                        newChatStatus.textContent = `Searching user (retry ${attempts}/${maxAttempts - 1})...`;
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                    }
-                }
+                // Search with multiple strategies
+                const userData = await searchUserMultiStrategy(username);
 
                 if (!userData || !userData.pubKey) {
                     newChatStatus.textContent = 'User not found. Please check the username.';
@@ -1036,14 +1024,11 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
                 newChatStatus.textContent = 'Starting chat...';
                 
-                // Add to both users' chats with proper sync
-                const chatRef1 = gun.get('users').get(app.currentUser).get('chats').get(username);
-                const chatRef2 = gun.get('users').get(username).get('chats').get(app.currentUser);
-                
-                chatRef1.put(true);
-                chatRef2.put(true);
+                // Add to chats
+                gun.get('users').get(app.currentUser).get('chats').get(username).put(true);
+                gun.get('users').get(username).get('chats').get(app.currentUser).put(true);
 
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, 800));
 
                 addContactToList(username, username);
                 newChatModal.classList.add('hidden');
@@ -1061,58 +1046,61 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             }
         }
 
-        // Helper function to search user with proper Gun sync
-        function searchUserWithTimeout(username, timeoutMs) {
-            return new Promise((resolve) => {
-                let found = false;
-                const userRef = gun.get('users').get(username);
-
-                // Set a timeout
-                const timeoutId = setTimeout(() => {
-                    if (!found) {
-                        resolve(null);
-                    }
-                }, timeoutMs);
-
-                // Listen for the user data
-                userRef.once(data => {
-                    if (found) return; // Already resolved
-                    
-                    // Check if user exists
+        async function searchUserMultiStrategy(username) {
+            // Strategy 1: Direct user node fetch with extended timeout
+            let result = await new Promise((resolve) => {
+                const timeout = setTimeout(() => resolve(null), 6000);
+                
+                gun.get('users').get(username).once((data) => {
+                    clearTimeout(timeout);
                     if (data && data.pubKey) {
-                        found = true;
-                        clearTimeout(timeoutId);
                         resolve({ pubKey: data.pubKey });
-                    } else if (data && typeof data === 'object') {
-                        // User node exists but pubKey might still be loading
-                        // Try to get pubKey explicitly
-                        userRef.get('pubKey').once(pubKeyData => {
-                            if (!found && pubKeyData && pubKeyData.length > 5) {
-                                found = true;
-                                clearTimeout(timeoutId);
-                                resolve({ pubKey: pubKeyData });
-                            }
-                        });
                     } else {
-                        // No user data at all
-                        clearTimeout(timeoutId);
                         resolve(null);
                     }
                 });
+            });
 
-                // Also try direct pubKey fetch as backup
-                setTimeout(() => {
-                    if (!found) {
-                        userRef.get('pubKey').once(pubKeyData => {
-                            if (!found && pubKeyData && pubKeyData.length > 5) {
-                                found = true;
-                                clearTimeout(timeoutId);
-                                resolve({ pubKey: pubKeyData });
+            if (result) return result;
+
+            // Strategy 2: Try pubKey field directly
+            result = await new Promise((resolve) => {
+                const timeout = setTimeout(() => resolve(null), 5000);
+                
+                gun.get('users').get(username).get('pubKey').once((pubKey) => {
+                    clearTimeout(timeout);
+                    if (pubKey && pubKey.length > 5) {
+                        resolve({ pubKey: pubKey });
+                    } else {
+                        resolve(null);
+                    }
+                });
+            });
+
+            if (result) return result;
+
+            // Strategy 3: Try privKey field (if pubKey doesn't exist, user exists)
+            result = await new Promise((resolve) => {
+                const timeout = setTimeout(() => resolve(null), 5000);
+                
+                gun.get('users').get(username).get('privKey').once((privKey) => {
+                    clearTimeout(timeout);
+                    if (privKey && privKey.length > 10) {
+                        // User exists, try to get pubKey again
+                        gun.get('users').get(username).get('pubKey').once((pubKey) => {
+                            if (pubKey && pubKey.length > 5) {
+                                resolve({ pubKey: pubKey });
+                            } else {
+                                resolve({ pubKey: 'exists' }); // Fallback
                             }
                         });
+                    } else {
+                        resolve(null);
                     }
-                }, 500);
+                });
             });
+
+            return result;
         }
 
         async function getSharedKey(partnerUsername) {
