@@ -989,6 +989,7 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             contactsList.prepend(contactEl);
         }
 
+        // FIXED: Improved user search with better error handling and multi-check approach
         async function handleNewChat(e) {
             e.preventDefault();
             const username = document.getElementById('new-chat-username').value.trim();
@@ -1007,33 +1008,60 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             }
 
             newChatSubmit.disabled = true;
-            newChatStatus.textContent = 'Searching...';
+            newChatStatus.textContent = 'Searching user...';
             newChatStatus.className = 'text-sm status-info';
 
             const timeout = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Timeout')), 8000)
+                setTimeout(() => reject(new Error('Search timeout - user may not exist')), 15000)
             );
 
             try {
-                const pubKey = await Promise.race([
+                // Try to fetch the entire user node to verify it exists
+                const userData = await Promise.race([
                     new Promise(resolve => {
-                        gun.get('users').get(username).get('pubKey').once(resolve);
+                        let userData = null;
+                        const userRef = gun.get('users').get(username);
+                        
+                        // Listen for user data with proper checks
+                        userRef.once(data => {
+                            // Check if we got actual user data
+                            if (data && typeof data === 'object' && data._ && data._.get) {
+                                // User node exists, now check for pubKey
+                                userRef.get('pubKey').once(pubKeyData => {
+                                    if (pubKeyData && pubKeyData !== null && pubKeyData !== undefined) {
+                                        userData = { pubKey: pubKeyData, _exist: true };
+                                        resolve(userData);
+                                    } else {
+                                        resolve(null);
+                                    }
+                                });
+                            } else {
+                                resolve(null);
+                            }
+                        });
+                        
+                        // Timeout after 8 seconds of waiting
+                        setTimeout(() => {
+                            if (!userData) {
+                                resolve(null);
+                            }
+                        }, 8000);
                     }),
                     timeout
                 ]);
 
-                if (!pubKey) {
-                    newChatStatus.textContent = 'User not found.';
+                if (!userData || !userData.pubKey) {
+                    newChatStatus.textContent = 'User not found. Please check the username.';
                     newChatStatus.className = 'text-sm status-error';
                     newChatSubmit.disabled = false;
                     return;
                 }
 
                 // Add to both users' chats
-                gun.get('users').get(app.currentUser).get('chats').set({[username]: true});
-                gun.get('users').get(username).get('chats').set({[app.currentUser]: true});
+                gun.get('users').get(app.currentUser).get('chats').get(username).put(true);
+                gun.get('users').get(username).get('chats').get(app.currentUser).put(true);
 
-                await new Promise(resolve => setTimeout(resolve, 500));
+                await new Promise(resolve => setTimeout(resolve, 800)); // Brief delay for Gun sync
 
                 addContactToList(username, username);
                 newChatModal.classList.add('hidden');
@@ -1045,7 +1073,7 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
 
             } catch (err) {
                 console.error('New chat error:', err);
-                newChatStatus.textContent = err.message || 'Search failed.';
+                newChatStatus.textContent = err.message || 'Search failed. Please try again.';
                 newChatStatus.className = 'text-sm status-error';
                 newChatSubmit.disabled = false;
             }
@@ -1057,12 +1085,14 @@ button[type="submit"]:disabled, #new-chat-button:disabled {
             }
 
             const timeout = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Key fetch timeout')), 8000)
+                setTimeout(() => reject(new Error('Key fetch timeout')), 12000)
             );
 
             let pubKeyJwk = await Promise.race([
                 new Promise(resolve => {
-                    gun.get('users').get(partnerUsername).get('pubKey').once(resolve);
+                    gun.get('users').get(partnerUsername).get('pubKey').once(data => {
+                        resolve(data);
+                    });
                 }),
                 timeout
             ]);
