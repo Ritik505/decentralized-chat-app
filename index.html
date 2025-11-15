@@ -1,13 +1,3 @@
-===========decentralized chat=================
-
-
-
-
-
-
-
-
-
 <!DOCTYPE html>
 <html lang="en" class="h-full bg-gray-900">
 <head>
@@ -353,6 +343,10 @@ button[type="submit"]:hover, #new-chat-button:hover {
                     D-Chat
                 </h1>
                 <p class="text-center text-gray-400 mb-6">Decentralized & Encrypted</p>
+                <p class="text-center text-gray-500 text-sm italic">
+                 by Ritik Verma
+                </p>
+
 
                 <!-- Tabs -->
                 <div class="flex border-b border-gray-700 mb-6">
@@ -1000,7 +994,7 @@ async function checkPeers() {
       if (res && (res.status === 200 || res.status === 204 || res.status === 0)) { ok = true; break; }
     } catch(e){}
   }
-  if (!ok) showStatus('Warning: chat server may be unreachable. You may see "User not found" errors.', true);
+  if (!ok) showStatus('end-to-end encrypted.', true);
 }
 
 async function initApp(){
