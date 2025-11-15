@@ -18,8 +18,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Gun.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
-    <!-- NOTE: CryptoJS removed. We now use Web Crypto API with PBKDF2 for key wrapping. -->
-
+    <!-- CryptoJS AES CDN (for private key encryption) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    
     <style>
 /* --- Color Palette Definitions --- */
 :root {
@@ -461,676 +462,531 @@ button[type="submit"]:hover, #new-chat-button:hover {
 
     <!-- JavaScript -->
     <script type="module">
-        // --- Globals ---
-        const gun = (typeof window !== 'undefined' && window.Gun) ? Gun({ peers: ['https://gun-man-web.onrender.com/gun'] }) : null;
-        if (!gun) {
-            alert('Gun.js failed to load. Check network or CDN.');
-        }
-        const app = {}; // App state
-        app.currentUser = null;
-        app.currentChat = null;
-        app.sharedKeys = {}; // Cache for derived shared keys { partnerUsername: CryptoKey }
-        app.userKeys = null; // { privateKey: CryptoKey, publicKey: CryptoKey }
-
-        // --- DOM Elements ---
-        const authPage = document.getElementById('auth-page');
-        const chatPage = document.getElementById('chat-page');
-        const authStatus = document.getElementById('auth-status');
-        const tabLogin = document.getElementById('tab-login');
-        const tabSignup = document.getElementById('tab-signup');
-        const loginForm = document.getElementById('login-form');
-        const signupForm = document.getElementById('signup-form');
-        const currentUsernameEl = document.getElementById('current-username');
-        const userAvatarEl = document.getElementById('user-avatar');
-        const logoutButton = document.getElementById('logout-button');
-        const newChatButton = document.getElementById('new-chat-button');
-        const newChatModal = document.getElementById('new-chat-modal');
-        const newChatForm = document.getElementById('new-chat-form');
-        const newChatStatus = document.getElementById('new-chat-status');
-        const cancelNewChat = document.getElementById('cancel-new-chat');
-        const contactsList = document.getElementById('contacts-list');
-        const noContactsEl = document.getElementById('no-contacts');
-        const chatWelcome = document.getElementById('chat-welcome');
-        const chatMessagesContainer = document.getElementById('chat-messages-container');
-        const chatHeader = document.getElementById('chat-header');
-        const chatPartnerAvatar = document.getElementById('chat-partner-avatar');
-        const chatPartnerUsername = document.getElementById('chat-partner-username');
-        const chatMessages = document.getElementById('chat-messages');
-        const messageForm = document.getElementById('message-form');
-        const messageInput = document.getElementById('message-input');
-        const emojiButton = document.getElementById('emoji-button');
-        const emojiPicker = document.getElementById('emoji-picker');
-        const emojiGrid = document.getElementById('emoji-grid');
-        const themeToggle = document.getElementById('theme-toggle');
-        const themeIcon = document.getElementById('theme-icon');
-
-        // A small emoji set (expand as needed)
-        const EMOJIS = ['😀','😁','😂','🤣','🙂','🙃','😉','😍','😘','😅','🤔','🤞','👍','👎','🙏','🎉','🔥','🌟','💯','❤️','😎','🤗','😴','🤖','😇','😬','😜','😢','😭','😡','🥳'];
-
-        function populateEmojis() {
-            if (!emojiGrid) return;
-            emojiGrid.innerHTML = '';
-            EMOJIS.forEach(e => {
-                const cell = document.createElement('button');
-                cell.type = 'button';
-                cell.className = 'emoji-cell';
-                cell.textContent = e;
-                cell.addEventListener('click', () => {
-                    insertAtCaret(messageInput, e);
-                    hideEmojiPicker();
-                    messageInput.focus();
-                });
-                emojiGrid.appendChild(cell);
-            });
-        }
-
-        function toggleEmojiPicker() {
-            if (!emojiPicker) return;
-            const visible = emojiPicker.style.display === 'block';
-            if (visible) hideEmojiPicker();
-            else showEmojiPicker();
-        }
-        function showEmojiPicker() {
-            if (!emojiPicker) return;
-            populateEmojis();
-            emojiPicker.style.display = 'block';
-            emojiPicker.setAttribute('aria-hidden', 'false');
-        }
-        function hideEmojiPicker() {
-            if (!emojiPicker) return;
-            emojiPicker.style.display = 'none';
-            emojiPicker.setAttribute('aria-hidden', 'true');
-        }
-
-        function insertAtCaret(input, text) {
-            try {
-                const start = input.selectionStart || 0;
-                const end = input.selectionEnd || 0;
-                const value = input.value || '';
-                input.value = value.slice(0, start) + text + value.slice(end);
-                const pos = start + text.length;
-                input.setSelectionRange(pos, pos);
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-            } catch (e) {
-                // fallback: append
-                input.value = (input.value || '') + text;
-            }
-        }
-
-        // Close picker when clicking outside
-        document.addEventListener('click', (e) => {
-            const target = e.target;
-            if (!emojiPicker || !emojiButton) return;
-            if (emojiPicker.contains(target) || emojiButton.contains(target)) {
-                return;
-            }
-            hideEmojiPicker();
-        });
-
-        // Toggle button handler
-        emojiButton?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleEmojiPicker();
-        });
-
-        // ===================================
-        // ---      CRYPTO UTILITIES       ---
-        // ===================================
-
-        /**
-         * Converts an ArrayBuffer or TypedArray to a Base64 string.
-         */
-        function arrayBufferToB64(buffer) {
-            let bytes;
-            if (buffer instanceof Uint8Array) {
-                bytes = buffer;
-            } else {
-                bytes = new Uint8Array(buffer);
-            }
-            let binary = '';
-            const len = bytes.byteLength;
-            for (let i = 0; i < len; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            return window.btoa(binary);
-        }
-
-        /**
-         * Converts a Base64 string to an ArrayBuffer.
-         */
-        function b64ToArrayBuffer(b64) {
-            const binary_string = window.atob(b64);
-            const len = binary_string.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binary_string.charCodeAt(i);
-            }
-            return bytes.buffer;
-        }
-
-        function textToArrayBuffer(str) { return new TextEncoder().encode(str); }
-        function arrayBufferToText(buffer) { return new TextDecoder().decode(buffer); }
-
-        async function generateKeys() {
-            return await crypto.subtle.generateKey(
-                { name: 'ECDH', namedCurve: 'P-256' },
-                true,
-                ['deriveKey']
-            );
-        }
-
-        async function importPubKey(jwk) {
-            return await crypto.subtle.importKey(
-                'jwk',
-                jwk,
-                { name: 'ECDH', namedCurve: 'P-256' },
-                true,
-                []
-            );
-        }
-
-        async function importPrivKey(jwk) {
-            return await crypto.subtle.importKey(
-                'jwk',
-                jwk,
-                { name: 'ECDH', namedCurve: 'P-256' },
-                true,
-                ['deriveKey']
-            );
-        }
-
-        async function deriveSharedKey(myPrivateKey, partnerPublicKey) {
-            return await crypto.subtle.deriveKey(
-                { name: 'ECDH', public: partnerPublicKey },
-                myPrivateKey,
-                { name: 'AES-GCM', length: 256 },
-                true,
-                ['encrypt', 'decrypt']
-            );
-        }
-
-        async function encryptMessage(sharedKey, plaintext) {
-            const iv = crypto.getRandomValues(new Uint8Array(12));
-            const encodedText = textToArrayBuffer(plaintext);
-            const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, sharedKey, encodedText);
-            return { ct: arrayBufferToB64(ciphertext), iv: arrayBufferToB64(iv) };
-        }
-
-        async function decryptMessage(sharedKey, ct_b64, iv_b64) {
-            try {
-                const ivBuf = b64ToArrayBuffer(iv_b64);
-                const iv = new Uint8Array(ivBuf);
-                const ciphertext = b64ToArrayBuffer(ct_b64);
-                const decryptedBuffer = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, sharedKey, ciphertext);
-                return arrayBufferToText(decryptedBuffer);
-            } catch (e) {
-                console.error("Decryption failed:", e);
-                return "🔒 [Failed to decrypt message]";
-            }
-        }
-
-        // -----------------------
-        // Password-based key wrap
-        // -----------------------
-        async function deriveKeyFromPassword(password, salt, iterations = 100000) {
-            const enc = new TextEncoder();
-            const passKey = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
-            return crypto.subtle.deriveKey(
-                { name: 'PBKDF2', salt: salt, iterations: iterations, hash: 'SHA-256' },
-                passKey,
-                { name: 'AES-GCM', length: 256 },
-                true,
-                ['encrypt', 'decrypt']
-            );
-        }
-
-        async function wrapPrivateKeyJWK(privateJwk, password) {
-            const salt = crypto.getRandomValues(new Uint8Array(16));
-            const iv = crypto.getRandomValues(new Uint8Array(12));
-            const key = await deriveKeyFromPassword(password, salt);
-            const plaintext = textToArrayBuffer(JSON.stringify(privateJwk));
-            const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
-            return {
-                ct: arrayBufferToB64(ciphertext),
-                iv: arrayBufferToB64(iv),
-                salt: arrayBufferToB64(salt)
-            };
-        }
-
-        async function unwrapPrivateKeyJWK(wrappedObj, password) {
-            const salt = new Uint8Array(b64ToArrayBuffer(wrappedObj.salt));
-            const iv = new Uint8Array(b64ToArrayBuffer(wrappedObj.iv));
-            const ct = b64ToArrayBuffer(wrappedObj.ct);
-            const key = await deriveKeyFromPassword(password, salt);
-            const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-            return JSON.parse(arrayBufferToText(decrypted));
-        }
-
-        // ===================================
-        // ---       AUTH LOGIC            ---
-        // ===================================
-
-        function showStatus(message, isError = false) {
-            authStatus.textContent = message;
-            authStatus.className = `mt-4 text-center text-sm ${isError ? 'text-red-400' : 'text-yellow-400'}`;
-        }
-
-        async function handleSignup(e) {
-            e.preventDefault();
-            const rawUsername = document.getElementById('signup-username').value.trim();
-            const password = document.getElementById('signup-password').value;
-            const username = rawUsername.toLowerCase(); // normalize to lowercase
-
-            if (!username || !password) {
-                showStatus("Username and password are required.", true);
-                return;
-            }
-
-            showStatus("Checking username availability...");
-
-            gun.get('users').get(username).once(async (data) => {
-                if (data && (data.pubKey || data.privKey)) {
-                    showStatus("Username already taken. Please choose another.", true);
-                    return;
-                }
-
-                try {
-                    showStatus("Generating cryptographic keys...");
-                    const keyPair = await generateKeys();
-
-                    const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
-                    const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
-
-                    showStatus("Securing private key...");
-                    const wrapped = await wrapPrivateKeyJWK(privateKeyJwk, password);
-
-                    const userNode = gun.get('users').get(username);
-                    userNode.put({
-                        pubKey: JSON.stringify(publicKeyJwk),
-                        privKey: JSON.stringify(wrapped)
-                    });
-
-                    showStatus("Signup successful! Please log in.");
-                    switchTab('login');
-                    loginForm.reset();
-                    signupForm.reset();
-                    document.getElementById('login-username').value = username;
-                    document.getElementById('login-password').focus();
-
-                } catch (err) {
-                    console.error("Signup error:", err);
-                    showStatus("An error occurred during signup. Please try again.", true);
-                }
-            });
-        }
-
-        async function handleLogin(e) {
-            e.preventDefault();
-            const username = document.getElementById('login-username').value.trim().toLowerCase(); // normalize
-            const password = document.getElementById('login-password').value;
-
-            if (!username || !password) {
-                showStatus("Username and password are required.", true);
-                return;
-            }
-
-            showStatus("Logging in...");
-
-            gun.get('users').get(username).once(async (data) => {
-                if (!data || !data.privKey) {
-                    showStatus("Invalid username or password.", true);
-                    return;
-                }
-
-                try {
-                    const wrapped = (typeof data.privKey === 'string') ? JSON.parse(data.privKey) : data.privKey;
-                    let privateKeyJwk;
-                    try {
-                        privateKeyJwk = await unwrapPrivateKeyJWK(wrapped, password);
-                    } catch (err) {
-                        showStatus("Invalid username or password.", true);
-                        return;
-                    }
-
-                    const publicKeyJwk = (typeof data.pubKey === 'string') ? JSON.parse(data.pubKey) : data.pubKey;
-
-                    sessionStorage.setItem('currentUser', username);
-                    sessionStorage.setItem('privKey', JSON.stringify(privateKeyJwk));
-                    sessionStorage.setItem('pubKey', JSON.stringify(publicKeyJwk));
-
-                    app.userKeys = {
-                        privateKey: await importPrivKey(privateKeyJwk),
-                        publicKey: await importPubKey(publicKeyJwk)
-                    };
-
-                    app.currentUser = username;
-                    showStatus("");
-                    loginForm.reset();
-                    await initChatPage();
-
-                } catch (err) {
-                    console.error("Login error:", err);
-                    showStatus("Invalid username or password.", true);
-                }
-            });
-        }
-
-        function handleLogout() {
-            sessionStorage.clear();
-            app.currentUser = null;
-            app.userKeys = null;
-            app.currentChat = null;
-            app.sharedKeys = {};
-
-            contactsList.innerHTML = '';
-            chatMessages.innerHTML = '';
-            noContactsEl.classList.remove('hidden');
-
-            chatPage.classList.add('hidden');
-            authPage.classList.remove('hidden');
-
-            switchTab('login');
-        }
-
-        function switchTab(tab) {
-            if (tab === 'login') {
-                tabLogin.classList.add('border-indigo-500', 'text-white');
-                tabLogin.classList.remove('text-gray-500');
-                tabSignup.classList.remove('border-indigo-500', 'text-white');
-                tabSignup.classList.add('text-gray-500');
-                loginForm.classList.remove('hidden');
-                signupForm.classList.add('hidden');
-            } else {
-                tabSignup.classList.add('border-indigo-500', 'text-white');
-                tabSignup.classList.remove('text-gray-500');
-                tabLogin.classList.remove('border-indigo-500', 'text-white');
-                tabLogin.classList.add('text-gray-500');
-                signupForm.classList.remove('hidden');
-                loginForm.classList.add('hidden');
-            }
-            authStatus.textContent = '';
-        }
-
-        // ===================================
-        // ---       CHAT LOGIC            ---
-        // ===================================
-
-        async function initChatPage() {
-            authPage.classList.add('hidden');
-            chatPage.classList.remove('hidden');
-
-            currentUsernameEl.textContent = app.currentUser;
-            userAvatarEl.textContent = app.currentUser.charAt(0).toUpperCase();
-
-            loadUserChats();
-        }
-
-        function loadUserChats() {
-            contactsList.innerHTML = '';
-            noContactsEl.classList.remove('hidden');
-
-            const chatsRef = gun.get('users').get(app.currentUser).get('chats');
-            chatsRef.map().on((val, key) => {
-                if (!val) return;
-                let chatId = null;
-                if (typeof val === 'string') chatId = val;
-                else if (val['#']) chatId = val['#'];
-                if (!chatId) return;
-                const partner = chatId.split(':').find(name => name !== app.currentUser);
-                if (partner) {
-                    addContactToList(partner, chatId);
-                }
-            });
-        }
-
-        function addContactToList(username, chatId) {
-            noContactsEl.classList.add('hidden');
-            if (document.getElementById(`contact-${username}`)) return;
-
-            const contactEl = document.createElement('div');
-            contactEl.id = `contact-${username}`;
-            contactEl.dataset.chatId = chatId;
-            contactEl.className = 'flex items-center p-4 cursor-pointer hover:bg-gray-700 border-b border-gray-700';
-            contactEl.innerHTML = `
-                <div class="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center font-bold text-white flex-shrink-0">
-                    ${username.charAt(0).toUpperCase()}
-                </div>
-                <div class="ml-3 flex-1 min-w-0">
-                    <p class="font-semibold text-white truncate">${username}</p>
-                    <p class="text-sm text-gray-400 truncate">Click to open chat</p>
-                </div>
-            `;
-            contactEl.addEventListener('click', () => {
-                openChat(username, chatId);
-            });
-            contactsList.prepend(contactEl);
-        }
-
-        async function handleNewChat(e) {
-            e.preventDefault();
-            const partnerRaw = document.getElementById('new-chat-username').value.trim();
-            const partnerUsername = partnerRaw.toLowerCase(); // normalize for lookup
-            newChatStatus.textContent = '';
-
-            if (!partnerUsername) {
-                newChatStatus.textContent = 'Please enter a username.';
-                return;
-            }
-            if (partnerUsername === app.currentUser) {
-                newChatStatus.textContent = "You can't chat with yourself.";
-                return;
-            }
-            newChatStatus.textContent = 'Searching for user...';
-
-            // Read full user node to be robust against how Gun returns pubKey
-            gun.get('users').get(partnerUsername).once(async (data) => {
-                if (!data || !data.pubKey) {
-                    newChatStatus.textContent = 'User not found.';
-                    return;
-                }
-
-                const chatId = [app.currentUser, partnerUsername].sort().join(':');
-                gun.get('users').get(app.currentUser).get('chats').set(chatId);
-                gun.get('users').get(partnerUsername).get('chats').set(chatId);
-
-                newChatModal.classList.add('hidden');
-                newChatForm.reset();
-
-                addContactToList(partnerUsername, chatId);
-                openChat(partnerUsername, chatId);
-            });
-        }
-
-        async function getSharedKey(partnerUsername) {
-            if (app.sharedKeys[partnerUsername]) return app.sharedKeys[partnerUsername];
-
-            // Fetch full user node then extract pubKey to avoid inconsistent returns
-            let userNode = await new Promise(resolve => {
-                gun.get('users').get(partnerUsername).once(resolve);
-            });
-
-            if (!userNode || !userNode.pubKey) throw new Error("Could not fetch partner's public key.");
-            let partnerPubKeyJwk = userNode.pubKey;
-            if (typeof partnerPubKeyJwk === 'string') partnerPubKeyJwk = JSON.parse(partnerPubKeyJwk);
-
-            const partnerPubKey = await importPubKey(partnerPubKeyJwk);
-            const sharedKey = await deriveSharedKey(app.userKeys.privateKey, partnerPubKey);
-
-            app.sharedKeys[partnerUsername] = sharedKey;
-            return sharedKey;
-        }
-
-        async function openChat(partnerUsername, chatId) {
-            try {
-                await getSharedKey(partnerUsername);
-
-                if (app.currentChat && app.currentChat.id) {
-                     gun.get('chat').get(app.currentChat.id).off();
-                }
-
-                app.currentChat = { partner: partnerUsername, id: chatId };
-
-                chatWelcome.classList.add('hidden');
-                chatMessagesContainer.classList.remove('hidden');
-
-                chatPartnerUsername.textContent = partnerUsername;
-                chatPartnerAvatar.textContent = partnerUsername.charAt(0).toUpperCase();
-                chatMessages.innerHTML = '';
-
-                document.querySelectorAll('#contacts-list > div').forEach(el => {
-                    el.classList.remove('bg-gray-900');
-                });
-                document.getElementById(`contact-${partnerUsername}`)?.classList.add('bg-gray-900');
-
-                // Listen for messages
-                gun.get('chat').get(app.currentChat.id).map().on((msg, msgKey) => {
-                    if (!msg) return;
-                    if ((msg.ct) && msg.sender) {
-                        displayMessage(msg);
-                    }
-                });
-
-            } catch (err) {
-                console.error("Error opening chat:", err);
-                alert("Could not start encrypted chat. Unable to get partner's key.");
-            }
-        }
-
-        async function displayMessage(msg) {
-            const isMe = msg.sender === app.currentUser;
-            let plaintext = "🔒 [Failed to decrypt]";
-
-            try {
-                const partnerForKey = isMe ? app.currentChat.partner : msg.sender;
-                const sharedKey = await getSharedKey(partnerForKey);
-                if (msg.ct && msg.iv) {
-                    plaintext = await decryptMessage(sharedKey, msg.ct, msg.iv);
-                } else if (msg.text) {
-                    // fallback only if present (should not be used in production)
-                    plaintext = msg.text;
-                }
-            } catch (e) {
-                console.error("Display decrypt error:", e);
-            }
-
-            const safeText = (plaintext || '').replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-            const msgEl = document.createElement('div');
-            msgEl.className = `flex ${isMe ? 'justify-end' : 'justify-start'}`;
-            msgEl.innerHTML = `
-                <div class="max-w-xs md:max-w-md lg:max-w-lg px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600 text-white rounded-br-lg' : 'bg-gray-700 text-white rounded-bl-lg'}">
-                    <p>${safeText}</p>
-                </div>
-            `;
-
-            const ts = msg.timestamp || Date.now();
-            const ctSnippet = (msg.ct || '').slice(0,8).replace(/[^a-zA-Z0-9]/g,'');
-            const msgId = `msg-${ts}-${msg.sender.slice(0,4)}-${ctSnippet}`;
-            const existingMsg = document.getElementById(msgId);
-            if (existingMsg) {
-                existingMsg.innerHTML = msgEl.innerHTML;
-            } else {
-                msgEl.id = msgId;
-                chatMessages.appendChild(msgEl);
-            }
-
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        async function handleSendMessage(e) {
-            e.preventDefault();
-            const text = messageInput.value.trim();
-            if (!text || !app.currentChat) return;
-
-            try {
-                const sharedKey = await getSharedKey(app.currentChat.partner);
-                const encrypted = await encryptMessage(sharedKey, text);
-                const timestamp = Date.now();
-                const message = {
-                    sender: app.currentUser,
-                    ct: encrypted.ct,
-                    iv: encrypted.iv,
-                    timestamp: timestamp
-                    // NOTE: no plaintext 'text' field stored to maintain E2E privacy
-                };
-                gun.get('chat').get(app.currentChat.id).set(message);
-                messageInput.value = '';
-            } catch (err) {
-                console.error("Error sending message:", err);
-                alert("Failed to send message.");
-            }
-        }
-
-
-        // ===================================
-        // ---       APP INIT & EVENTS     ---
-        // ===================================
-
-        function applyTheme(theme) {
-            const isLight = theme === 'light';
-            document.documentElement.classList.toggle('light', isLight);
-            if (themeIcon) {
-                if (isLight) {
-                    themeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-11.34l-.7.7M4.04 19.96l-.7-.7M21 12h-1M4 12H3m15.66 5.66l-.7-.7M4.04 4.04l-.7.7M12 7a5 5 0 100 10 5 5 0 000-10z"></path>';
-                } else {
-                    themeIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>';
-                }
-            }
-            localStorage.setItem('theme', theme);
-        }
-
-        async function initApp() {
-            populateEmojis();
-            const savedTheme = localStorage.getItem('theme') || 'dark';
-            applyTheme(savedTheme);
-
-            themeToggle?.addEventListener('click', (e) => {
-                const current = document.documentElement.classList.contains('light') ? 'light' : 'dark';
-                const next = current === 'light' ? 'dark' : 'light';
-                applyTheme(next);
-            });
-
-            const username = sessionStorage.getItem('currentUser');
-            const privKeyStr = sessionStorage.getItem('privKey');
-            const pubKeyStr = sessionStorage.getItem('pubKey');
-
-            if (username && privKeyStr && pubKeyStr) {
-                try {
-                    app.currentUser = username;
-                    app.userKeys = {
-                        privateKey: await importPrivKey(JSON.parse(privKeyStr)),
-                        publicKey: await importPubKey(JSON.parse(pubKeyStr))
-                    };
-                    await initChatPage();
-                } catch (e) {
-                    console.error("Session restore failed:", e);
-                    handleLogout();
-                }
-            } else {
-                authPage.classList.remove('hidden');
-                chatPage.classList.add('hidden');
-            }
-
-            tabLogin.addEventListener('click', () => switchTab('login'));
-            tabSignup.addEventListener('click', () => switchTab('signup'));
-            loginForm.addEventListener('submit', handleLogin);
-            signupForm.addEventListener('submit', handleSignup);
-
-            logoutButton.addEventListener('click', handleLogout);
-            newChatButton.addEventListener('click', () => {
-                newChatModal.classList.remove('hidden');
-                document.getElementById('new-chat-username').focus();
-            });
-            cancelNewChat.addEventListener('click', () => {
-                newChatModal.classList.add('hidden');
-                newChatForm.reset();
-                newChatStatus.textContent = '';
-            });
-            newChatForm.addEventListener('submit', handleNewChat);
-            messageForm.addEventListener('submit', handleSendMessage);
-        }
-
-        initApp();
+        // =========================
+// Decentralized Chat - Full Fixed JS (single file)
+// Paste inside your existing <script type="module"> (no <script> tags)
+// =========================
+
+// -------------------------
+//  CONFIG / GLOBALS
+// -------------------------
+const GUN_PEERS = [
+  // primary stable public peer(s)
+  'https://gun-manhattan.herokuapp.com/gun',
+  'https://gun-ec2.herokuapp.com/gun'
+];
+
+const gun = (typeof window !== 'undefined' && window.Gun) ? Gun({ peers: GUN_PEERS }) : null;
+if (!gun) {
+  alert('Gun.js failed to load. Check network or CDN.');
+}
+const app = { currentUser: null, currentChat: null, sharedKeys: {}, userKeys: null };
+
+// -------------------------
+// DOM elements (existing IDs expected)
+// -------------------------
+const authPage = document.getElementById('auth-page');
+const chatPage = document.getElementById('chat-page');
+const authStatus = document.getElementById('auth-status');
+const tabLogin = document.getElementById('tab-login');
+const tabSignup = document.getElementById('tab-signup');
+const loginForm = document.getElementById('login-form');
+const signupForm = document.getElementById('signup-form');
+const currentUsernameEl = document.getElementById('current-username');
+const userAvatarEl = document.getElementById('user-avatar');
+const logoutButton = document.getElementById('logout-button');
+const newChatButton = document.getElementById('new-chat-button');
+const newChatModal = document.getElementById('new-chat-modal');
+const newChatForm = document.getElementById('new-chat-form');
+const newChatStatus = document.getElementById('new-chat-status');
+const cancelNewChat = document.getElementById('cancel-new-chat');
+const contactsList = document.getElementById('contacts-list');
+const noContactsEl = document.getElementById('no-contacts');
+const chatWelcome = document.getElementById('chat-welcome');
+const chatMessagesContainer = document.getElementById('chat-messages-container');
+const chatPartnerAvatar = document.getElementById('chat-partner-avatar');
+const chatPartnerUsername = document.getElementById('chat-partner-username');
+const chatMessages = document.getElementById('chat-messages');
+const messageForm = document.getElementById('message-form');
+const messageInput = document.getElementById('message-input');
+const emojiButton = document.getElementById('emoji-button');
+const emojiPicker = document.getElementById('emoji-picker');
+const emojiGrid = document.getElementById('emoji-grid');
+const themeToggle = document.getElementById('theme-toggle');
+const themeIcon = document.getElementById('theme-icon');
+
+// -------------------------
+// Small emoji UI (existing in your markup)
+// -------------------------
+const EMOJIS = ['😀','😁','😂','🤣','🙂','🙃','😉','😍','😘','😅','🤔','🤞','👍','👎','🙏','🎉','🔥','🌟','💯','❤️','😎','🤗','😴','🤖','😇','😬','😜','😢','😭','😡','🥳'];
+function populateEmojis(){ if(!emojiGrid) return; emojiGrid.innerHTML=''; EMOJIS.forEach(e=>{const b=document.createElement('button'); b.type='button'; b.className='emoji-cell'; b.textContent=e; b.addEventListener('click',()=>{ insertAtCaret(messageInput,e); hideEmojiPicker(); messageInput.focus(); }); emojiGrid.appendChild(b); });}
+function toggleEmojiPicker(){ if(!emojiPicker) return; emojiPicker.style.display = (emojiPicker.style.display === 'block') ? 'none' : 'block'; }
+function showEmojiPicker(){ if(!emojiPicker) return; populateEmojis(); emojiPicker.style.display='block'; emojiPicker.setAttribute('aria-hidden','false'); }
+function hideEmojiPicker(){ if(!emojiPicker) return; emojiPicker.style.display='none'; emojiPicker.setAttribute('aria-hidden','true'); }
+function insertAtCaret(input, text){ try{ const start = input.selectionStart || 0; const end = input.selectionEnd || 0; const v = input.value || ''; input.value = v.slice(0,start) + text + v.slice(end); const pos = start + text.length; input.setSelectionRange(pos,pos); input.dispatchEvent(new Event('input',{bubbles:true})); }catch(e){ input.value = (input.value||'') + text; } }
+emojiButton?.addEventListener('click', e=>{ e.stopPropagation(); toggleEmojiPicker(); });
+document.addEventListener('click', (e)=>{ if(!emojiPicker || !emojiButton) return; if(emojiPicker.contains(e.target) || emojiButton.contains(e.target)) return; hideEmojiPicker(); });
+
+// -------------------------
+// Crypto helpers (Web Crypto + base64 utils)
+// -------------------------
+function arrayBufferToB64(buffer){
+  let bytes = (buffer instanceof Uint8Array) ? buffer : new Uint8Array(buffer);
+  let binary = '';
+  for (let i=0;i<bytes.byteLength;i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+function b64ToArrayBuffer(b64){
+  const bin = atob(b64);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i=0;i<len;i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+function textToArrayBuffer(s){ return new TextEncoder().encode(s); }
+function arrayBufferToText(buf){ return new TextDecoder().decode(buf); }
+
+async function generateKeys(){
+  return await crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-256'}, true, ['deriveKey']);
+}
+async function importPubKey(jwk){ return await crypto.subtle.importKey('jwk', jwk, {name:'ECDH', namedCurve:'P-256'}, true, []); }
+async function importPrivKey(jwk){ return await crypto.subtle.importKey('jwk', jwk, {name:'ECDH', namedCurve:'P-256'}, true, ['deriveKey']); }
+async function deriveSharedKey(myPrivateKey, partnerPublicKey){
+  return await crypto.subtle.deriveKey({ name:'ECDH', public: partnerPublicKey }, myPrivateKey, { name:'AES-GCM', length:256 }, true, ['encrypt','decrypt']);
+}
+async function encryptMessage(sharedKey, plaintext){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, sharedKey, textToArrayBuffer(plaintext));
+  return { ct: arrayBufferToB64(ct), iv: arrayBufferToB64(iv) };
+}
+async function decryptMessage(sharedKey, ct_b64, iv_b64){
+  try{
+    const iv = new Uint8Array(b64ToArrayBuffer(iv_b64));
+    const ciphertext = b64ToArrayBuffer(ct_b64);
+    const plain = await crypto.subtle.decrypt({name:'AES-GCM', iv}, sharedKey, ciphertext);
+    return arrayBufferToText(plain);
+  }catch(e){ console.error('decryptMessage failed',e); throw e; }
+}
+
+// -------------------------
+// UI helpers & status
+// -------------------------
+function showStatus(msg, isError=false){ if(authStatus) { authStatus.textContent = msg; authStatus.className = `mt-4 text-center text-sm ${isError?'text-red-400':'text-yellow-400'}`; } console.log('[STATUS]', msg); }
+
+// -------------------------
+// Robust pubKey fetch with retries (fixes "user not found")
+// Returns parsed JWK or null
+// -------------------------
+async function fetchPartnerPubKey(partnerUsername, retries = 4, delayMs = 600){
+  for(let i=0;i<retries;i++){
+    const res = await new Promise(resolve => {
+      gun.get('users').get(partnerUsername).get('pubKey').once(resolve);
+      // also set a short timer: if peer doesn't respond, resolve undefined and let retry
+      setTimeout(()=>resolve(undefined), 900);
+    });
+    if (res && res !== '' && res !== null && res !== undefined) {
+      try {
+        return (typeof res === 'string') ? JSON.parse(res) : res;
+      } catch(e){ return res; }
+    }
+    // wait before retrying
+    await new Promise(r => setTimeout(r, delayMs));
+  }
+  return null;
+}
+
+// -------------------------
+// AUTH: signup / login
+// -------------------------
+async function handleSignup(e){
+  e && e.preventDefault();
+  const username = document.getElementById('signup-username').value.trim();
+  const password = document.getElementById('signup-password').value;
+  if(!username || !password) { showStatus('Username and password are required.', true); return; }
+  showStatus('Checking username availability...');
+  // Check if user exists (simple optimistic check)
+  const existing = await new Promise(resolve => gun.get('users').get(username).once(resolve, {wait:1500}));
+  if (existing && (existing.pubKey || existing.privKey)) { showStatus('Username already taken. Please choose another.', true); return; }
+
+  try{
+    showStatus('Generating keys...');
+    const kp = await generateKeys();
+    const pubJwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
+    const privJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+    // encrypt priv with password (CryptoJS AES)
+    const encryptedPriv = CryptoJS.AES.encrypt(JSON.stringify(privJwk), password).toString();
+    // store user node (pubKey as JSON string for consistency)
+    const node = gun.get('users').get(username);
+    node.put({ pubKey: JSON.stringify(pubJwk), privKey: encryptedPriv });
+    node.get('chats').put(null); // ensure chats node exists
+    showStatus('Signup successful! Please log in.');
+    switchTab('login');
+    signupForm.reset();
+    document.getElementById('login-username').value = username;
+    document.getElementById('login-password').focus();
+  }catch(err){
+    console.error('signup error',err);
+    showStatus('Signup failed. Try again.', true);
+  }
+}
+
+async function handleLogin(e){
+  e && e.preventDefault();
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  if(!username || !password){ showStatus('Username and password are required.', true); return; }
+  showStatus('Logging in...');
+  // Fetch user node
+  const data = await new Promise(resolve => gun.get('users').get(username).once(resolve, {wait:1500}));
+  if (!data || !data.privKey) { showStatus('Invalid username or password.', true); return; }
+  try{
+    const decrypted = CryptoJS.AES.decrypt(data.privKey, password).toString(CryptoJS.enc.Utf8);
+    if (!decrypted) { showStatus('Invalid username or password.', true); return; }
+    const privJwk = JSON.parse(decrypted);
+    const pubJwk = (typeof data.pubKey === 'string') ? JSON.parse(data.pubKey) : data.pubKey;
+    // import keys
+    app.userKeys = { privateKey: await importPrivKey(privJwk), publicKey: await importPubKey(pubJwk) };
+    app.currentUser = username;
+    // store session
+    sessionStorage.setItem('currentUser', username);
+    sessionStorage.setItem('privKey', JSON.stringify(privJwk));
+    sessionStorage.setItem('pubKey', JSON.stringify(pubJwk));
+    showStatus('');
+    loginForm.reset();
+    await initChatPage();
+  }catch(err){
+    console.error('login error',err);
+    showStatus('Invalid username or password.', true);
+  }
+}
+
+function handleLogout(){
+  sessionStorage.clear();
+  app.currentUser = null;
+  app.userKeys = null;
+  app.currentChat = null;
+  app.sharedKeys = {};
+  contactsList.innerHTML = '';
+  chatMessages.innerHTML = '';
+  noContactsEl.classList.remove('hidden');
+  chatPage.classList.add('hidden'); authPage.classList.remove('hidden'); switchTab('login');
+}
+
+// -------------------------
+// Chat & contacts
+// -------------------------
+async function initChatPage(){
+  authPage.classList.add('hidden'); chatPage.classList.remove('hidden');
+  currentUsernameEl.textContent = app.currentUser;
+  userAvatarEl.textContent = app.currentUser.charAt(0).toUpperCase();
+  loadUserChats();
+}
+
+// Load chats (list) reliably
+function loadUserChats(){
+  contactsList.innerHTML = '';
+  noContactsEl.classList.remove('hidden');
+  const chatsRef = gun.get('users').get(app.currentUser).get('chats');
+  chatsRef.map().on((val, key) => {
+    if(!val) return;
+    let chatId = null;
+    if (typeof val === 'string') chatId = val;
+    else if (val['#']) chatId = val['#'];
+    if (!chatId) return;
+    const partner = chatId.split(':').find(n => n !== app.currentUser);
+    if (partner) addContactToList(partner, chatId);
+  });
+}
+
+function addContactToList(username, chatId){
+  noContactsEl.classList.add('hidden');
+  if (document.getElementById(`contact-${username}`)) return;
+  const contactEl = document.createElement('div');
+  contactEl.id = `contact-${username}`;
+  contactEl.dataset.chatId = chatId;
+  contactEl.className = 'flex items-center p-4 cursor-pointer hover:bg-gray-700 border-b border-gray-700';
+  contactEl.innerHTML = `<div class="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center font-bold text-white flex-shrink-0">${username.charAt(0).toUpperCase()}</div>
+  <div class="ml-3 flex-1 min-w-0"><p class="font-semibold text-white truncate">${username}</p><p class="text-sm text-gray-400 truncate">Click to open chat</p></div>`;
+  contactEl.addEventListener('click', ()=> openChat(username, chatId));
+  contactsList.prepend(contactEl);
+}
+
+// create chat and link both users
+async function createChatAndOpen(partnerUsername){
+  const chatId = [app.currentUser, partnerUsername].sort().join(':');
+  gun.get('users').get(app.currentUser).get('chats').set(chatId);
+  gun.get('users').get(partnerUsername).get('chats').set(chatId);
+  newChatModal.classList.add('hidden'); newChatForm.reset();
+  addContactToList(partnerUsername, chatId);
+  openChat(partnerUsername, chatId);
+}
+
+// New chat handler with robust lookup
+async function handleNewChat(e){
+  e && e.preventDefault();
+  const partnerUsername = document.getElementById('new-chat-username').value.trim();
+  newChatStatus.textContent = '';
+  if (!partnerUsername) { newChatStatus.textContent = 'Please enter a username.'; return; }
+  if (partnerUsername === app.currentUser) { newChatStatus.textContent = "You can't chat with yourself."; return; }
+  newChatStatus.textContent = 'Searching for user...';
+  const pub = await fetchPartnerPubKey(partnerUsername, 6, 700);
+  if (!pub) { newChatStatus.textContent = 'User not found.'; return; }
+  // success
+  createChatAndOpen(partnerUsername);
+}
+
+// -------------------------
+// Shared key derivation & caching
+// -------------------------
+async function getSharedKey(partnerUsername){
+  if (app.sharedKeys[partnerUsername]) return app.sharedKeys[partnerUsername];
+  // fetch partner pub key with retries
+  const partnerPubJwk = await fetchPartnerPubKey(partnerUsername, 6, 700);
+  if (!partnerPubJwk) throw new Error("Could not fetch partner's public key.");
+  const partnerPub = await importPubKey(partnerPubJwk);
+  const sharedKey = await deriveSharedKey(app.userKeys.privateKey, partnerPub);
+  app.sharedKeys[partnerUsername] = sharedKey;
+  return sharedKey;
+}
+
+// -------------------------
+// Open chat: attach listener and load history
+// -------------------------
+async function openChat(partnerUsername, chatId){
+  try{
+    await getSharedKey(partnerUsername); // ensure key derivation
+    if (app.currentChat && app.currentChat.id) gun.get('chat').get(app.currentChat.id).off();
+    app.currentChat = { partner: partnerUsername, id: chatId };
+    chatWelcome.classList.add('hidden'); chatMessagesContainer.classList.remove('hidden');
+    chatPartnerUsername.textContent = partnerUsername;
+    chatPartnerAvatar.textContent = partnerUsername.charAt(0).toUpperCase();
+    chatMessages.innerHTML = '';
+    // highlight UI
+    document.querySelectorAll('#contacts-list > div').forEach(el => el.classList.remove('bg-gray-900'));
+    document.getElementById(`contact-${partnerUsername}`)?.classList.add('bg-gray-900');
+
+    // restore local cached messages quickly (if any)
+    const cached = localStorage.getItem(`chatcache:${chatId}`);
+    if (cached) {
+      try {
+        const msgs = JSON.parse(cached);
+        msgs.forEach(m => renderMessageDOM(m));
+      } catch(e){ console.warn('cache parse failed', e); }
+    }
+
+    // Listen for messages: decrypt and render
+    gun.get('chat').get(chatId).map().on(async (msg, key) => {
+      if (!msg) return;
+      // messages may be text or file
+      // Normalize: msg should have sender and timestamp
+      if (!msg.sender) return;
+      // Save raw to local cache (for quick restore later)
+      try {
+        const existing = JSON.parse(localStorage.getItem(`chatcache:${chatId}`) || '[]');
+        existing.push(msg);
+        // keep last 200 messages
+        if (existing.length > 200) existing.splice(0, existing.length-200);
+        localStorage.setItem(`chatcache:${chatId}`, JSON.stringify(existing));
+      } catch(e){ console.warn('cache save failed', e); }
+
+      // Render
+      renderMessageDOM(msg);
+    });
+
+  } catch(err){
+    console.error('openChat error', err);
+    alert('Could not open chat: ' + (err.message || err));
+  }
+}
+
+// -------------------------
+// Render message in DOM (handles text & files)
+// Accepts a raw message object from Gun
+// -------------------------
+async function renderMessageDOM(msg){
+  // Avoid duplicate rendering by id if possible
+  const ts = msg.timestamp || Date.now();
+  const snippet = (msg.ct||'').slice(0,8).replace(/[^a-z0-9]/gi,'');
+  const id = `msg-${ts}-${(msg.sender||'').slice(0,4)}-${snippet}`;
+  if (document.getElementById(id)) return;
+
+  const isMe = msg.sender === app.currentUser;
+  const wrapper = document.createElement('div');
+  wrapper.className = `flex ${isMe ? 'justify-end' : 'justify-start'}`;
+  wrapper.id = id;
+
+  // File message
+  if (msg.isFile || msg.ctFile) {
+    // two possible shapes based on how upload used: {isFile:true, ct:..., iv:..., type,name}
+    let fileMeta = msg;
+    // some flows used ctFile / ivFile naming, normalize:
+    if (!fileMeta.ct && fileMeta.ctFile) { fileMeta.ct = fileMeta.ctFile; fileMeta.iv = fileMeta.ivFile; }
+    // try decrypt
+    try{
+      const sharedKey = await getSharedKey(msg.sender);
+      const decryptedBuffer = await crypto.subtle.decrypt(
+        {name:'AES-GCM', iv: new Uint8Array(b64ToArrayBuffer(fileMeta.iv))},
+        sharedKey,
+        b64ToArrayBuffer(fileMeta.ct)
+      );
+      const blob = new Blob([decryptedBuffer], { type: fileMeta.type || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      if (fileMeta.type && fileMeta.type.startsWith('image/')) {
+        wrapper.innerHTML = `<div class="max-w-xs md:max-w-md px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600' : 'bg-gray-700'} text-white">
+          <p class="font-semibold mb-1">${escapeHtml(fileMeta.name)}</p>
+          <img src="${url}" class="rounded-xl max-h-64 object-cover mt-2" />
+        </div>`;
+      } else {
+        wrapper.innerHTML = `<div class="max-w-xs md:max-w-md px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600' : 'bg-gray-700'} text-white">
+          <p class="font-semibold mb-1">${escapeHtml(fileMeta.name)}</p>
+          <a href="${url}" download="${escapeHtml(fileMeta.name)}" class="underline text-sm">Download</a>
+        </div>`;
+      }
+      chatMessages.appendChild(wrapper);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      // revoke after some time
+      setTimeout(()=>URL.revokeObjectURL(url), 60_000);
+      return;
+    }catch(e){
+      console.error('file decrypt fail', e);
+      wrapper.innerHTML = `<div class="max-w-xs md:max-w-md px-4 py-3 rounded-2xl bg-gray-600 text-white">🔒 [Encrypted file - failed to decrypt]</div>`;
+      chatMessages.appendChild(wrapper);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      return;
+    }
+  }
+
+  // Text message
+  try{
+    let plaintext = '';
+    if (isMe && msg.text) plaintext = msg.text;
+    else if (!isMe && msg.ct) {
+      const sharedKey = await getSharedKey(msg.sender);
+      plaintext = await decryptMessage(sharedKey, msg.ct, msg.iv);
+    } else if (isMe && !msg.text && msg.ct) {
+      const sk = await getSharedKey(app.currentChat.partner);
+      plaintext = await decryptMessage(sk, msg.ct, msg.iv);
+    } else {
+      return; // unknown shape
+    }
+    wrapper.innerHTML = `<div class="max-w-xs md:max-w-md lg:max-w-lg px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600 text-white rounded-br-lg' : 'bg-gray-700 text-white rounded-bl-lg'}">
+      <p>${escapeHtml(plaintext)}</p>
+    </div>`;
+    chatMessages.appendChild(wrapper);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }catch(e){
+    console.error('renderMessageDOM decrypt error', e);
+  }
+}
+
+function escapeHtml(s){ return String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// -------------------------
+// Sending messages
+// -------------------------
+async function handleSendMessage(e){
+  e && e.preventDefault();
+  const text = (messageInput.value || '').trim();
+  if (!text || !app.currentChat) return;
+  try{
+    const sharedKey = await getSharedKey(app.currentChat.partner);
+    const encrypted = await encryptMessage(sharedKey, text);
+    const msg = { sender: app.currentUser, ct: encrypted.ct, iv: encrypted.iv, timestamp: Date.now(), text: text };
+    gun.get('chat').get(app.currentChat.id).set(msg);
+    messageInput.value = '';
+  }catch(err){
+    console.error('send message failed', err);
+    alert('Failed to send message.');
+  }
+}
+
+// -------------------------
+// FILE SHARING (encrypt with derived sharedKey, store in Gun)
+// -------------------------
+async function fileToArrayBuffer(file){ return await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsArrayBuffer(file); }); }
+
+async function encryptAndUploadFile(file){
+  if (!app.currentChat) return alert('Open a chat first!');
+  try{
+    const sharedKey = await getSharedKey(app.currentChat.partner);
+    const buffer = await fileToArrayBuffer(file);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encryptedBuffer = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, sharedKey, buffer);
+    const ctB64 = arrayBufferToB64(encryptedBuffer);
+    const ivB64 = arrayBufferToB64(iv);
+    const fileMsg = { sender: app.currentUser, name: file.name, type: file.type, size: file.size, iv: ivB64, ct: ctB64, timestamp: Date.now(), isFile: true };
+    gun.get('chat').get(app.currentChat.id).set(fileMsg);
+  }catch(e){ console.error('encryptAndUploadFile fail', e); alert('File send failed.'); }
+}
+
+// Attach file button + input (place near emoji button)
+const fileInput = document.createElement('input');
+fileInput.type = 'file'; fileInput.style.display='none'; document.body.appendChild(fileInput);
+const fileButton = document.createElement('button');
+fileButton.type='button'; fileButton.textContent='📎'; fileButton.className='ml-2 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600'; fileButton.title='Attach file';
+// try to insert next to emoji button; fallback to end of message form
+if (emojiButton && emojiButton.parentNode) emojiButton.parentNode.insertBefore(fileButton, emojiButton.nextSibling);
+else messageForm.appendChild(fileButton);
+fileButton.addEventListener('click', ()=> fileInput.click());
+fileInput.addEventListener('change', async (ev)=>{ const f = ev.target.files?.[0]; if (!f) return; await encryptAndUploadFile(f); fileInput.value=''; });
+
+// -------------------------
+// Init, session restore, UI wiring
+// -------------------------
+function switchTab(tab){
+  if (tab==='login'){ tabLogin.classList.add('border-indigo-500','text-white'); tabLogin.classList.remove('text-gray-500'); tabSignup.classList.remove('border-indigo-500','text-white'); tabSignup.classList.add('text-gray-500'); loginForm.classList.remove('hidden'); signupForm.classList.add('hidden'); }
+  else { tabSignup.classList.add('border-indigo-500','text-white'); tabSignup.classList.remove('text-gray-500'); tabLogin.classList.remove('border-indigo-500','text-white'); tabLogin.classList.add('text-gray-500'); signupForm.classList.remove('hidden'); loginForm.classList.add('hidden'); }
+  authStatus.textContent='';
+}
+
+function applyTheme(theme){ const isLight = theme === 'light'; document.documentElement.classList.toggle('light', isLight); if (themeIcon){ themeIcon.innerHTML = isLight ? '<path ... />' : '<path ... />'; } localStorage.setItem('theme', theme); }
+
+async function initApp(){
+  populateEmojis();
+  const savedTheme = localStorage.getItem('theme') || 'dark'; applyTheme(savedTheme);
+  themeToggle?.addEventListener('click', ()=>{ const curr=document.documentElement.classList.contains('light') ? 'light' : 'dark'; applyTheme(curr==='light' ? 'dark' : 'light'); });
+
+  // session restore if saved keys exist
+  const username = sessionStorage.getItem('currentUser');
+  const privKeyStr = sessionStorage.getItem('privKey');
+  const pubKeyStr = sessionStorage.getItem('pubKey');
+  if (username && privKeyStr && pubKeyStr){
+    try{
+      app.currentUser = username;
+      app.userKeys = { privateKey: await importPrivKey(JSON.parse(privKeyStr)), publicKey: await importPubKey(JSON.parse(pubKeyStr)) };
+      await initChatPage();
+    }catch(e){ console.error('session restore failed', e); handleLogout(); }
+  } else { authPage.classList.remove('hidden'); chatPage.classList.add('hidden'); }
+
+  // wire events
+  tabLogin.addEventListener('click', ()=> switchTab('login'));
+  tabSignup.addEventListener('click', ()=> switchTab('signup'));
+  loginForm.addEventListener('submit', handleLogin);
+  signupForm.addEventListener('submit', handleSignup);
+  logoutButton.addEventListener('click', handleLogout);
+  newChatButton.addEventListener('click', ()=> { newChatModal.classList.remove('hidden'); document.getElementById('new-chat-username').focus(); });
+  cancelNewChat.addEventListener('click', ()=> { newChatModal.classList.add('hidden'); newChatForm.reset(); newChatStatus.textContent=''; });
+  newChatForm.addEventListener('submit', handleNewChat);
+  messageForm.addEventListener('submit', handleSendMessage);
+}
+
+// start
+initApp().catch(e=>console.error('initApp error', e));
+
+// -------------------------
+// Network/peer watchers for debug (optional, helpful on Netlify)
+// -------------------------
+if (gun) {
+  try {
+    // friendly console notice
+    console.log('Gun peers:', GUN_PEERS);
+    // try a lightweight ping to each peer by fetching root
+    GUN_PEERS.forEach(async p => {
+      try { const res = await fetch(p.replace('/gun','/')) ; console.log('peer ok', p, res.status); } catch(e){ console.warn('peer unreachable', p); }
+    });
+  } catch(e){ console.warn('peer check error', e); }
+}
+
 
     </script>
 </body>
