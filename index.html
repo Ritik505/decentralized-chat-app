@@ -462,18 +462,14 @@ button[type="submit"]:hover, #new-chat-button:hover {
 
     <!-- JavaScript -->
     <script type="module">
-        // =========================
-// Decentralized Chat - Full Fixed JS (single file)
+      // Decentralized Chat - Full Fixed JS (single file)
 // Paste inside your existing <script type="module"> (no <script> tags)
-// =========================
 
 // -------------------------
 //  CONFIG / GLOBALS
 // -------------------------
 const GUN_PEERS = [
-  // primary stable public peer(s)
-  'https://gun-manhattan.herokuapp.com/gun',
-  'https://gun-ec2.herokuapp.com/gun'
+  'https://gun-peer-server.onrender.com/gun'
 ];
 
 const gun = (typeof window !== 'undefined' && window.Gun) ? Gun({ peers: GUN_PEERS }) : null;
@@ -577,20 +573,36 @@ function showStatus(msg, isError=false){ if(authStatus) { authStatus.textContent
 // Robust pubKey fetch with retries (fixes "user not found")
 // Returns parsed JWK or null
 // -------------------------
-async function fetchPartnerPubKey(partnerUsername, retries = 4, delayMs = 600){
-  for(let i=0;i<retries;i++){
-    const res = await new Promise(resolve => {
-      gun.get('users').get(partnerUsername).get('pubKey').once(resolve);
-      // also set a short timer: if peer doesn't respond, resolve undefined and let retry
-      setTimeout(()=>resolve(undefined), 900);
-    });
-    if (res && res !== '' && res !== null && res !== undefined) {
-      try {
-        return (typeof res === 'string') ? JSON.parse(res) : res;
-      } catch(e){ return res; }
+async function fetchPartnerPubKey(partnerUsername, retries = 5, delayMs = 700) {
+  const tryOnce = () => new Promise(resolve => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (!done) { done = true; resolve(undefined); }
+    }, Math.max(900, Math.floor(delayMs / 2)));
+
+    try {
+      gun.get('users').get(partnerUsername).get('pubKey').once((res) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(res);
+      });
+    } catch (e) {
+      if (!done) { done = true; clearTimeout(timer); resolve(undefined); }
     }
-    // wait before retrying
+  });
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await tryOnce();
+      if (res !== undefined && res !== null && res !== '') {
+        try { return (typeof res === 'string') ? JSON.parse(res) : res; } catch (e) { return res; }
+      }
+    } catch (e) {
+      console.warn('fetchPartnerPubKey try failed', e);
+    }
     await new Promise(r => setTimeout(r, delayMs));
+    delayMs = Math.min(2000, Math.round(delayMs * 1.2));
   }
   return null;
 }
@@ -604,7 +616,6 @@ async function handleSignup(e){
   const password = document.getElementById('signup-password').value;
   if(!username || !password) { showStatus('Username and password are required.', true); return; }
   showStatus('Checking username availability...');
-  // Check if user exists (simple optimistic check)
   const existing = await new Promise(resolve => gun.get('users').get(username).once(resolve, {wait:1500}));
   if (existing && (existing.pubKey || existing.privKey)) { showStatus('Username already taken. Please choose another.', true); return; }
 
@@ -613,12 +624,10 @@ async function handleSignup(e){
     const kp = await generateKeys();
     const pubJwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
     const privJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
-    // encrypt priv with password (CryptoJS AES)
     const encryptedPriv = CryptoJS.AES.encrypt(JSON.stringify(privJwk), password).toString();
-    // store user node (pubKey as JSON string for consistency)
     const node = gun.get('users').get(username);
     node.put({ pubKey: JSON.stringify(pubJwk), privKey: encryptedPriv });
-    node.get('chats').put(null); // ensure chats node exists
+    node.get('chats').put(null);
     showStatus('Signup successful! Please log in.');
     switchTab('login');
     signupForm.reset();
@@ -636,7 +645,6 @@ async function handleLogin(e){
   const password = document.getElementById('login-password').value;
   if(!username || !password){ showStatus('Username and password are required.', true); return; }
   showStatus('Logging in...');
-  // Fetch user node
   const data = await new Promise(resolve => gun.get('users').get(username).once(resolve, {wait:1500}));
   if (!data || !data.privKey) { showStatus('Invalid username or password.', true); return; }
   try{
@@ -644,7 +652,6 @@ async function handleLogin(e){
     if (!decrypted) { showStatus('Invalid username or password.', true); return; }
     const privJwk = JSON.parse(decrypted);
     const pubJwk = (typeof data.pubKey === 'string') ? JSON.parse(data.pubKey) : data.pubKey;
-    // import keys
     app.userKeys = { privateKey: await importPrivKey(privJwk), publicKey: await importPubKey(pubJwk) };
     app.currentUser = username;
     // store session
@@ -731,7 +738,6 @@ async function handleNewChat(e){
   newChatStatus.textContent = 'Searching for user...';
   const pub = await fetchPartnerPubKey(partnerUsername, 6, 700);
   if (!pub) { newChatStatus.textContent = 'User not found.'; return; }
-  // success
   createChatAndOpen(partnerUsername);
 }
 
@@ -740,7 +746,6 @@ async function handleNewChat(e){
 // -------------------------
 async function getSharedKey(partnerUsername){
   if (app.sharedKeys[partnerUsername]) return app.sharedKeys[partnerUsername];
-  // fetch partner pub key with retries
   const partnerPubJwk = await fetchPartnerPubKey(partnerUsername, 6, 700);
   if (!partnerPubJwk) throw new Error("Could not fetch partner's public key.");
   const partnerPub = await importPubKey(partnerPubJwk);
@@ -754,18 +759,16 @@ async function getSharedKey(partnerUsername){
 // -------------------------
 async function openChat(partnerUsername, chatId){
   try{
-    await getSharedKey(partnerUsername); // ensure key derivation
+    await getSharedKey(partnerUsername);
     if (app.currentChat && app.currentChat.id) gun.get('chat').get(app.currentChat.id).off();
     app.currentChat = { partner: partnerUsername, id: chatId };
     chatWelcome.classList.add('hidden'); chatMessagesContainer.classList.remove('hidden');
     chatPartnerUsername.textContent = partnerUsername;
     chatPartnerAvatar.textContent = partnerUsername.charAt(0).toUpperCase();
     chatMessages.innerHTML = '';
-    // highlight UI
     document.querySelectorAll('#contacts-list > div').forEach(el => el.classList.remove('bg-gray-900'));
     document.getElementById(`contact-${partnerUsername}`)?.classList.add('bg-gray-900');
 
-    // restore local cached messages quickly (if any)
     const cached = localStorage.getItem(`chatcache:${chatId}`);
     if (cached) {
       try {
@@ -774,22 +777,15 @@ async function openChat(partnerUsername, chatId){
       } catch(e){ console.warn('cache parse failed', e); }
     }
 
-    // Listen for messages: decrypt and render
     gun.get('chat').get(chatId).map().on(async (msg, key) => {
       if (!msg) return;
-      // messages may be text or file
-      // Normalize: msg should have sender and timestamp
       if (!msg.sender) return;
-      // Save raw to local cache (for quick restore later)
       try {
         const existing = JSON.parse(localStorage.getItem(`chatcache:${chatId}`) || '[]');
         existing.push(msg);
-        // keep last 200 messages
         if (existing.length > 200) existing.splice(0, existing.length-200);
         localStorage.setItem(`chatcache:${chatId}`, JSON.stringify(existing));
       } catch(e){ console.warn('cache save failed', e); }
-
-      // Render
       renderMessageDOM(msg);
     });
 
@@ -801,10 +797,8 @@ async function openChat(partnerUsername, chatId){
 
 // -------------------------
 // Render message in DOM (handles text & files)
-// Accepts a raw message object from Gun
 // -------------------------
 async function renderMessageDOM(msg){
-  // Avoid duplicate rendering by id if possible
   const ts = msg.timestamp || Date.now();
   const snippet = (msg.ct||'').slice(0,8).replace(/[^a-z0-9]/gi,'');
   const id = `msg-${ts}-${(msg.sender||'').slice(0,4)}-${snippet}`;
@@ -815,13 +809,9 @@ async function renderMessageDOM(msg){
   wrapper.className = `flex ${isMe ? 'justify-end' : 'justify-start'}`;
   wrapper.id = id;
 
-  // File message
   if (msg.isFile || msg.ctFile) {
-    // two possible shapes based on how upload used: {isFile:true, ct:..., iv:..., type,name}
     let fileMeta = msg;
-    // some flows used ctFile / ivFile naming, normalize:
     if (!fileMeta.ct && fileMeta.ctFile) { fileMeta.ct = fileMeta.ctFile; fileMeta.iv = fileMeta.ivFile; }
-    // try decrypt
     try{
       const sharedKey = await getSharedKey(msg.sender);
       const decryptedBuffer = await crypto.subtle.decrypt(
@@ -844,8 +834,7 @@ async function renderMessageDOM(msg){
       }
       chatMessages.appendChild(wrapper);
       chatMessages.scrollTop = chatMessages.scrollHeight;
-      // revoke after some time
-      setTimeout(()=>URL.revokeObjectURL(url), 60_000);
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
       return;
     }catch(e){
       console.error('file decrypt fail', e);
@@ -856,7 +845,6 @@ async function renderMessageDOM(msg){
     }
   }
 
-  // Text message
   try{
     let plaintext = '';
     if (isMe && msg.text) plaintext = msg.text;
@@ -867,7 +855,7 @@ async function renderMessageDOM(msg){
       const sk = await getSharedKey(app.currentChat.partner);
       plaintext = await decryptMessage(sk, msg.ct, msg.iv);
     } else {
-      return; // unknown shape
+      return;
     }
     wrapper.innerHTML = `<div class="max-w-xs md:max-w-md lg:max-w-lg px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600 text-white rounded-br-lg' : 'bg-gray-700 text-white rounded-bl-lg'}">
       <p>${escapeHtml(plaintext)}</p>
@@ -896,7 +884,7 @@ async function handleSendMessage(e){
     messageInput.value = '';
   }catch(err){
     console.error('send message failed', err);
-    alert('Failed to send message.');
+    showStatus('Failed to send message.', true);
   }
 }
 
@@ -916,7 +904,7 @@ async function encryptAndUploadFile(file){
     const ivB64 = arrayBufferToB64(iv);
     const fileMsg = { sender: app.currentUser, name: file.name, type: file.type, size: file.size, iv: ivB64, ct: ctB64, timestamp: Date.now(), isFile: true };
     gun.get('chat').get(app.currentChat.id).set(fileMsg);
-  }catch(e){ console.error('encryptAndUploadFile fail', e); alert('File send failed.'); }
+  }catch(e){ console.error('encryptAndUploadFile fail', e); showStatus('File send failed.', true); }
 }
 
 // Attach file button + input (place near emoji button)
@@ -924,7 +912,6 @@ const fileInput = document.createElement('input');
 fileInput.type = 'file'; fileInput.style.display='none'; document.body.appendChild(fileInput);
 const fileButton = document.createElement('button');
 fileButton.type='button'; fileButton.textContent='📎'; fileButton.className='ml-2 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600'; fileButton.title='Attach file';
-// try to insert next to emoji button; fallback to end of message form
 if (emojiButton && emojiButton.parentNode) emojiButton.parentNode.insertBefore(fileButton, emojiButton.nextSibling);
 else messageForm.appendChild(fileButton);
 fileButton.addEventListener('click', ()=> fileInput.click());
@@ -940,6 +927,20 @@ function switchTab(tab){
 }
 
 function applyTheme(theme){ const isLight = theme === 'light'; document.documentElement.classList.toggle('light', isLight); if (themeIcon){ themeIcon.innerHTML = isLight ? '<path ... />' : '<path ... />'; } localStorage.setItem('theme', theme); }
+
+// small peer check to warn user if peer down
+async function checkPeers() {
+  if (!GUN_PEERS || !GUN_PEERS.length) return;
+  let ok = false;
+  for (const p of GUN_PEERS) {
+    try {
+      const root = p.replace('/gun','/');
+      const res = await fetch(root, { method: 'GET', mode: 'cors' });
+      if (res && (res.status === 200 || res.status === 204 || res.status === 0)) { ok = true; break; }
+    } catch(e){}
+  }
+  if (!ok) showStatus('Warning: chat server may be unreachable. You may see "User not found" errors.', true);
+}
 
 async function initApp(){
   populateEmojis();
@@ -968,6 +969,9 @@ async function initApp(){
   cancelNewChat.addEventListener('click', ()=> { newChatModal.classList.add('hidden'); newChatForm.reset(); newChatStatus.textContent=''; });
   newChatForm.addEventListener('submit', handleNewChat);
   messageForm.addEventListener('submit', handleSendMessage);
+
+  // quick peer check (helps debug on Netlify)
+  checkPeers();
 }
 
 // start
@@ -978,14 +982,13 @@ initApp().catch(e=>console.error('initApp error', e));
 // -------------------------
 if (gun) {
   try {
-    // friendly console notice
     console.log('Gun peers:', GUN_PEERS);
-    // try a lightweight ping to each peer by fetching root
     GUN_PEERS.forEach(async p => {
       try { const res = await fetch(p.replace('/gun','/')) ; console.log('peer ok', p, res.status); } catch(e){ console.warn('peer unreachable', p); }
     });
   } catch(e){ console.warn('peer check error', e); }
 }
+
 
 
     </script>
