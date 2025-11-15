@@ -1,51 +1,996 @@
+===========decentralized chat=================
+
+
+
+
+
+
+
+
 
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en" class="h-full bg-gray-900">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>D-Chat: Decentralized Chat</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D-Chat | Decentralized Chat</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Gun.js and dependencies -->
-    <script>
-      // Polyfill for Buffer, required by some Gun.js dependencies
-      if (typeof Buffer === 'undefined') {
-        window.Buffer = {
-          from: function (str, enc) {
-            if (enc === 'hex') {
-              const bytes = [];
-              for (let i = 0; i < str.length; i += 2) {
-                bytes.push(parseInt(str.substr(i, 2), 16));
-              }
-              return bytes;
-            }
-            // Add other encodings if needed
-            return new TextEncoder().encode(str);
-          }
-        };
-      }
-    </script>
+    <!-- Gun.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+    <!-- CryptoJS AES CDN (for private key encryption) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script type="importmap">
-{
-  "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.553.0"
+    
+    <style>
+/* --- Color Palette Definitions --- */
+:root {
+    /* Primary Dark Theme Colors (Based on GitHub/VSCode dark theme for professionalism) */
+    --color-bg-primary: #0D1117;     /* Deep Background (Chat area, body) */
+    --color-bg-secondary: #161B22;   /* Sidebar/Header Background (Slightly lighter) */
+    --color-bg-card: #21262D;        /* Card/Form/Received Message Background */
+    --color-border: #30363D;         /* Subtle Separator Lines */
+
+    /* Accent Color (Professional Blue/Indigo) */
+    --color-accent-primary: #58A6FF; /* Primary Accent (Buttons/Active states/Sent Bubbles) */
+    --color-accent-dark: #377FEA;    /* Darker Accent on Hover/Avatars */
+
+    /* Text Colors */
+    --color-text-light: #C9D1D9;     /* Default light text */
+    --color-text-muted: #8B949E;     /* Secondary/Hint text */
+}
+
+/* --- Light theme overrides (apply by adding "light" class on <html>) --- */
+.light {
+    --color-bg-primary: #F6F8FA;    /* Light background for main area */
+    --color-bg-secondary: #FFFFFF;  /* Sidebar/Header background */
+    --color-bg-card: #FFFFFF;       /* Card/Form/Received message bg */
+    --color-border: #E6E8EB;        /* Light border */
+
+    --color-accent-primary: #2563EB; /* Blue for light mode */
+    --color-accent-dark: #1D4ED8;
+
+    --color-text-light: #0F172A;    /* Dark text */
+    --color-text-muted: #475569;    /* Muted text in light mode */
+}
+
+/* 1. Global Reset & Base Setup */
+html, body {
+    height: 100%;
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background-color: var(--color-bg-primary) !important;
+    color: var(--color-text-light) !important;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+*, *::before, *::after { box-sizing: inherit; }
+
+/* 2. Auth Page Styling */
+#auth-page { display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; }
+
+#auth-page > div { /* Auth Card */
+    background-color: var(--color-bg-card) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--color-border);
+}
+
+#auth-page h1 {
+    color: #FFFFFF !important;
+    font-size: 1.875rem !important;
+}
+
+/* Tabs */
+.flex.border-b { border-bottom: 2px solid var(--color-border) !important; }
+.flex.border-b button { 
+    color: var(--color-text-muted) !important; 
+    border-bottom: 2px solid transparent !important; 
+    transition: all 0.2s ease;
+}
+#tab-login { /* Active Tab */
+    color: var(--color-text-light) !important;
+    border-bottom-color: var(--color-accent-primary) !important;
+}
+#tab-signup {
+    /* Ensure only the active tab shows the indigo bottom border */
+    border-color: transparent !important;
+}
+
+/* Form Inputs */
+#auth-forms input, #new-chat-username, #message-input {
+    background-color: var(--color-bg-secondary) !important;
+    border: 1px solid var(--color-border) !important;
+    color: var(--color-text-light) !important;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+#auth-forms input:focus, #new-chat-username:focus, #message-input:focus {
+    border-color: var(--color-accent-primary) !important;
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3) !important;
+    outline: none !important;
+}
+
+/* Primary Buttons */
+button[type="submit"], #new-chat-button {
+    background-color: var(--color-accent-primary) !important;
+    color: #FFFFFF !important;
+    transition: background-color 0.2s;
+}
+button[type="submit"]:hover, #new-chat-button:hover {
+    background-color: var(--color-accent-dark) !important;
+}
+
+/* Secondary Button (Modal Cancel) */
+#cancel-new-chat { 
+    background-color: var(--color-bg-card) !important;
+    color: var(--color-text-light) !important;
+    border: 1px solid var(--color-border) !important;
+}
+#cancel-new-chat:hover {
+    background-color: var(--color-border) !important;
+}
+
+/* 3. Chat Layout & Sidebar */
+#chat-page > div.flex { display: flex; height: 100%; }
+
+.flex-col.w-full { /* Sidebar Container */
+    background-color: var(--color-bg-secondary) !important;
+    border-right: 1px solid var(--color-border) !important;
+}
+
+/* Header/Footer Bars */
+.flex-shrink-0.h-16 {
+    background-color: var(--color-bg-secondary) !important;
+    border-bottom: 1px solid var(--color-border) !important;
+}
+
+#user-avatar, #chat-partner-avatar {
+    background-color: var(--color-accent-dark) !important;
+    /* Use a fixed, professional avatar size */
+    width: 36px !important; 
+    height: 36px !important;
+}
+
+#logout-button { color: var(--color-text-muted) !important; }
+#logout-button:hover { color: var(--color-text-light) !important; }
+
+/* Contacts List Items (You need to update your JS to inject .contact-item class) */
+#contacts-list { overflow-y: auto; }
+
+/* Placeholder for JS-injected contact item */
+.contact-item { 
+    display: flex; align-items: center; padding: 1rem; cursor: pointer; 
+    border-bottom: 1px solid var(--color-border); 
+    transition: background-color 0.15s ease;
+}
+.contact-item:hover { background-color: var(--color-bg-card) !important; }
+.contact-item.active { /* Active Chat */
+    background-color: var(--color-bg-card) !important;
+    border-left: 3px solid var(--color-accent-primary);
+    margin-left: -3px; /* Compensate for border width */
+}
+.contact-item p { color: var(--color-text-light) !important; }
+.contact-item p.text-sm { color: var(--color-text-muted) !important; }
+
+/* 4. Main Chat Area */
+.flex-1.flex.flex-col { /* Main chat container */
+    background-color: var(--color-bg-primary) !important;
+}
+
+#chat-welcome {
+    /* Adjust welcome state text colors */
+    color: var(--color-text-muted) !important;
+}
+#chat-welcome h2 {
+    color: var(--color-text-light) !important;
+}
+
+/* Message Input Form */
+#message-form {
+    background-color: var(--color-bg-secondary) !important;
+    border-top: 1px solid var(--color-border) !important;
+}
+
+/* Message Bubbles (Requires JS to inject .message-row, .message-bubble.sent/received) */
+#chat-messages { overflow-y: auto; }
+
+/* Placeholder for JS-injected message row */
+.message-row { 
+    display: flex; margin-bottom: 0.5rem; 
+    align-items: flex-end; /* Align sender/time to the bottom */
+}
+
+/* Placeholder for JS-injected message bubble */
+.message-bubble { 
+    max-width: 65%; /* Wider bubbles for modern look */
+    padding: 0.75rem 1rem; 
+    border-radius: 18px; 
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.15); 
+    word-wrap: break-word;
+}
+
+.message-bubble.sent {
+    background-color: var(--color-accent-primary) !important; /* Blue accent */
+    color: #FFFFFF !important;
+    margin-left: auto;
+    border-bottom-right-radius: 8px; /* Tail effect */
+}
+.message-bubble.received {
+    background-color: var(--color-bg-card) !important; /* Dark card color */
+    color: var(--color-text-light) !important;
+    margin-right: auto;
+    border-bottom-left-radius: 8px; /* Tail effect */
+}
+
+.message-time { 
+    color: rgba(201, 209, 217, 0.5); /* Semi-transparent muted text */
+    font-size: 0.7rem; 
+    margin: 0 8px;
+    align-self: flex-end;
+}
+
+/* 5. Scrollbar Refinement */
+#chat-messages::-webkit-scrollbar,
+#contacts-list::-webkit-scrollbar { width: 8px; height: 8px; }
+#chat-messages::-webkit-scrollbar-track,
+#contacts-list::-webkit-scrollbar-track { background: var(--color-bg-secondary); }
+#chat-messages::-webkit-scrollbar-thumb,
+#contacts-list::-webkit-scrollbar-thumb { 
+    background: var(--color-border); /* Subtle thumb color */
+    border-radius: 4px; 
+}
+#chat-messages::-webkit-scrollbar-thumb:hover,
+#contacts-list::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+/* Utility Overrides */
+.hidden { display: none !important; }
+
+ /* Emoji picker styles */
+ .emoji-button {
+     background: transparent;
+     border: none;
+     cursor: pointer;
+     font-size: 20px;
+     width: 40px;
+     height: 40px;
+     display: inline-flex;
+     align-items: center;
+     justify-content: center;
+     color: var(--color-text-light);
+ }
+ #emoji-picker {
+     position: absolute;
+     bottom: 72px; /* sits above the input area */
+     right: 24px;
+     background: var(--color-bg-card);
+     border: 1px solid var(--color-border);
+     padding: 8px;
+     border-radius: 8px;
+     display: none;
+     width: 260px;
+     max-width: calc(100% - 48px);
+     box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+     z-index: 60;
+ }
+ .emoji-grid {
+     display: grid;
+     grid-template-columns: repeat(8, 1fr);
+     gap: 6px;
+     max-height: 220px;
+     overflow: auto;
+ }
+ .emoji-cell {
+     font-size: 1.25rem;
+     padding: 6px;
+     cursor: pointer;
+     display: flex;
+     align-items: center;
+     justify-content: center;
+     border-radius: 6px;
+ }
+ .emoji-cell:hover {
+     background: var(--color-bg-secondary);
+ }
+    </style>
+</head>
+<body class="h-full font-sans text-gray-200 antialiased">
+
+    <!-- Main Application Container -->
+    <div id="app-container" class="h-full">
+
+        <!-- ===== Auth Page ===== -->
+        <div id="auth-page" class="flex items-center justify-center h-full p-4">
+            <div class="w-full max-w-md bg-gray-800 rounded-2xl shadow-lg p-8">
+                <h1 class="text-3xl font-bold text-center text-white mb-2">
+                    D-Chat
+                </h1>
+                <p class="text-center text-gray-400 mb-6">Decentralized & Encrypted</p>
+
+                <!-- Tabs -->
+                <div class="flex border-b border-gray-700 mb-6">
+                    <button id="tab-login" class="flex-1 py-2 font-semibold text-white border-b-2 border-indigo-500">
+                        Login
+                    </button>
+                    <button id="tab-signup" class="flex-1 py-2 font-semibold text-gray-500">
+                        Sign Up
+                    </button>
+                </div>
+
+                <!-- Auth Forms -->
+                <div id="auth-forms">
+                    <!-- Login Form -->
+                    <form id="login-form" class="space-y-4">
+                        <div>
+                            <label for="login-username" class="block text-sm font-medium text-gray-300">Username</label>
+                            <input type="text" id="login-username" required class="mt-1 block w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label for="login-password" class="block text-sm font-medium text-gray-300">Password</label>
+                            <input type="password" id="login-password" required class="mt-1 block w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <button type="submit" class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold transition duration-200">
+                            Login
+                        </button>
+                    </form>
+
+                    <!-- Signup Form -->
+                    <form id="signup-form" class="space-y-4 hidden">
+                        <div>
+                            <label for="signup-username" class="block text-sm font-medium text-gray-300">Username</label>
+                            <input type="text" id="signup-username" required class="mt-1 block w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label for="signup-password" class="block text-sm font-medium text-gray-300">Password</label>
+                            <input type="password" id="signup-password" required class="mt-1 block w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <button type="submit" class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold transition duration-200">
+                            Sign Up
+                        </button>
+                    </form>
+                </div>
+
+                <p id="auth-status" class="mt-4 text-center text-sm text-yellow-400"></p>
+            </div>
+        </div>
+
+        <!-- ===== Chat Page ===== -->
+        <div id="chat-page" class="hidden h-full">
+            <div class="flex h-full">
+                <!-- Sidebar (Contacts List) -->
+                <div class="flex flex-col w-full md:w-1/3 lg:w-1/4 h-full bg-gray-800 border-r border-gray-700">
+                    <!-- Sidebar Header -->
+                    <div class="flex items-center justify-between p-4 border-b border-gray-700 h-16 flex-shrink-0">
+                        <div class="flex items-center space-x-2">
+                            <div id="user-avatar" class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center font-bold text-white"></div>
+                            <span id="current-username" class="font-semibold text-white"></span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button id="theme-toggle" class="text-gray-400 hover:text-white" title="Toggle theme" aria-label="Toggle theme">
+                                <!-- JS will replace icon -->
+                                <svg id="theme-icon" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.66-11.34l-.7.7M4.04 19.96l-.7-.7M21 12h-1M4 12H3m15.66 5.66l-.7-.7M4.04 4.04l-.7.7"></path>
+                                </svg>
+                            </button>
+                            <button id="logout-button" class="text-gray-400 hover:text-white" title="Logout">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- New Chat Button -->
+                    <div class="p-4">
+                        <button id="new-chat-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2">
+                            <!-- Inlined Plus SVG -->
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                            <span>New Chat</span>
+                        </button>
+                    </div>
+
+                    <!-- Contacts List -->
+                    <div id="contacts-list" class="flex-1 overflow-y-auto">
+                        <!-- Contact items will be injected here -->
+                        <p id="no-contacts" class="text-gray-500 text-center p-4">No recent chats.</p>
+                    </div>
+                </div>
+
+                <!-- Main Chat Area -->
+                <div class="flex-1 flex flex-col h-full">
+                    <!-- Chat Header -->
+                    <div id="chat-header" class="flex items-center p-4 border-b border-gray-700 h-16 flex-shrink-0 bg-gray-800">
+                        <div id="chat-partner-avatar" class="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center font-bold text-white"></div>
+                        <span id="chat-partner-username" class="ml-3 font-semibold text-white"></span>
+                    </div>
+
+                    <!-- Welcome/Empty State -->
+                    <div id="chat-welcome" class="flex-1 flex flex-col items-center justify-center text-gray-500 p-8 text-center">
+                        <svg class="w-24 h-24 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 5.523-4.477 10-10 10S1 17.523 1 12 5.477 2 11 2s10 4.477 10 10z"></path></svg>
+                        <h2 class="text-2xl font-semibold text-gray-400">Welcome to D-Chat</h2>
+                        <p>Select a chat on the left or start a new one.</p>
+                        <p class="text-sm mt-2">All messages are end-to-end encrypted.</p>
+                    </div>
+                    
+                    <!-- Messages Container -->
+                    <div id="chat-messages-container" class="hidden flex-1 flex flex-col">
+                        <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4">
+                            <!-- Messages will be injected here -->
+                        </div>
+
+                        <!-- Message Input -->
+                        <form id="message-form" class="p-4 border-t border-gray-700 bg-gray-800 relative">
+                            <div class="flex items-center space-x-3">
+                                <button type="button" id="emoji-button" class="emoji-button" title="Insert emoji">😊</button>
+                                <input type="text" id="message-input" placeholder="Type your message..." autocomplete="off" class="flex-1 px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg p-3">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                                </button>
+                            </div>
+                            <!-- Emoji picker -->
+                            <div id="emoji-picker" aria-hidden="true">
+                                <div class="emoji-grid" id="emoji-grid"></div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Chat Modal -->
+    <div id="new-chat-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 rounded-2xl shadow-lg p-8 w-full max-w-md">
+            <h2 class="text-2xl font-bold text-white mb-6">Start a New Chat</h2>
+            <form id="new-chat-form">
+                <div class="space-y-4">
+                    <div>
+                        <label for="new-chat-username" class="block text-sm font-medium text-gray-300">Username</label>
+                        <input type="text" id="new-chat-username" required class="mt-1 block w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    <p id="new-chat-status" class="text-sm text-yellow-400"></p>
+                    <div class="flex justify-end space-x-4">
+                        <button type="button" id="cancel-new-chat" class="px-6 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-white font-semibold transition duration-200">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold transition duration-200">
+                            Start Chat
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- JavaScript -->
+    <script type="module">
+      // Decentralized Chat - Full Fixed JS (single file)
+// Paste inside your existing <script type="module"> (no <script> tags)
+
+// -------------------------
+//  CONFIG / GLOBALS
+// -------------------------
+const GUN_PEERS = [
+  'https://gun-peer-server.onrender.com/gun'
+];
+
+const gun = (typeof window !== 'undefined' && window.Gun) ? Gun({ peers: GUN_PEERS }) : null;
+if (!gun) {
+  alert('Gun.js failed to load. Check network or CDN.');
+}
+const app = { currentUser: null, currentChat: null, sharedKeys: {}, userKeys: null };
+
+// -------------------------
+// DOM elements (existing IDs expected)
+// -------------------------
+const authPage = document.getElementById('auth-page');
+const chatPage = document.getElementById('chat-page');
+const authStatus = document.getElementById('auth-status');
+const tabLogin = document.getElementById('tab-login');
+const tabSignup = document.getElementById('tab-signup');
+const loginForm = document.getElementById('login-form');
+const signupForm = document.getElementById('signup-form');
+const currentUsernameEl = document.getElementById('current-username');
+const userAvatarEl = document.getElementById('user-avatar');
+const logoutButton = document.getElementById('logout-button');
+const newChatButton = document.getElementById('new-chat-button');
+const newChatModal = document.getElementById('new-chat-modal');
+const newChatForm = document.getElementById('new-chat-form');
+const newChatStatus = document.getElementById('new-chat-status');
+const cancelNewChat = document.getElementById('cancel-new-chat');
+const contactsList = document.getElementById('contacts-list');
+const noContactsEl = document.getElementById('no-contacts');
+const chatWelcome = document.getElementById('chat-welcome');
+const chatMessagesContainer = document.getElementById('chat-messages-container');
+const chatPartnerAvatar = document.getElementById('chat-partner-avatar');
+const chatPartnerUsername = document.getElementById('chat-partner-username');
+const chatMessages = document.getElementById('chat-messages');
+const messageForm = document.getElementById('message-form');
+const messageInput = document.getElementById('message-input');
+const emojiButton = document.getElementById('emoji-button');
+const emojiPicker = document.getElementById('emoji-picker');
+const emojiGrid = document.getElementById('emoji-grid');
+const themeToggle = document.getElementById('theme-toggle');
+const themeIcon = document.getElementById('theme-icon');
+
+// -------------------------
+// Small emoji UI (existing in your markup)
+// -------------------------
+const EMOJIS = ['😀','😁','😂','🤣','🙂','🙃','😉','😍','😘','😅','🤔','🤞','👍','👎','🙏','🎉','🔥','🌟','💯','❤️','😎','🤗','😴','🤖','😇','😬','😜','😢','😭','😡','🥳'];
+function populateEmojis(){ if(!emojiGrid) return; emojiGrid.innerHTML=''; EMOJIS.forEach(e=>{const b=document.createElement('button'); b.type='button'; b.className='emoji-cell'; b.textContent=e; b.addEventListener('click',()=>{ insertAtCaret(messageInput,e); hideEmojiPicker(); messageInput.focus(); }); emojiGrid.appendChild(b); });}
+function toggleEmojiPicker(){ if(!emojiPicker) return; emojiPicker.style.display = (emojiPicker.style.display === 'block') ? 'none' : 'block'; }
+function showEmojiPicker(){ if(!emojiPicker) return; populateEmojis(); emojiPicker.style.display='block'; emojiPicker.setAttribute('aria-hidden','false'); }
+function hideEmojiPicker(){ if(!emojiPicker) return; emojiPicker.style.display='none'; emojiPicker.setAttribute('aria-hidden','true'); }
+function insertAtCaret(input, text){ try{ const start = input.selectionStart || 0; const end = input.selectionEnd || 0; const v = input.value || ''; input.value = v.slice(0,start) + text + v.slice(end); const pos = start + text.length; input.setSelectionRange(pos,pos); input.dispatchEvent(new Event('input',{bubbles:true})); }catch(e){ input.value = (input.value||'') + text; } }
+emojiButton?.addEventListener('click', e=>{ e.stopPropagation(); toggleEmojiPicker(); });
+document.addEventListener('click', (e)=>{ if(!emojiPicker || !emojiButton) return; if(emojiPicker.contains(e.target) || emojiButton.contains(e.target)) return; hideEmojiPicker(); });
+
+// -------------------------
+// Crypto helpers (Web Crypto + base64 utils)
+// -------------------------
+function arrayBufferToB64(buffer){
+  let bytes = (buffer instanceof Uint8Array) ? buffer : new Uint8Array(buffer);
+  let binary = '';
+  for (let i=0;i<bytes.byteLength;i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+function b64ToArrayBuffer(b64){
+  const bin = atob(b64);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i=0;i<len;i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+function textToArrayBuffer(s){ return new TextEncoder().encode(s); }
+function arrayBufferToText(buf){ return new TextDecoder().decode(buf); }
+
+async function generateKeys(){
+  return await crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-256'}, true, ['deriveKey']);
+}
+async function importPubKey(jwk){ return await crypto.subtle.importKey('jwk', jwk, {name:'ECDH', namedCurve:'P-256'}, true, []); }
+async function importPrivKey(jwk){ return await crypto.subtle.importKey('jwk', jwk, {name:'ECDH', namedCurve:'P-256'}, true, ['deriveKey']); }
+async function deriveSharedKey(myPrivateKey, partnerPublicKey){
+  return await crypto.subtle.deriveKey({ name:'ECDH', public: partnerPublicKey }, myPrivateKey, { name:'AES-GCM', length:256 }, true, ['encrypt','decrypt']);
+}
+async function encryptMessage(sharedKey, plaintext){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, sharedKey, textToArrayBuffer(plaintext));
+  return { ct: arrayBufferToB64(ct), iv: arrayBufferToB64(iv) };
+}
+async function decryptMessage(sharedKey, ct_b64, iv_b64){
+  try{
+    const iv = new Uint8Array(b64ToArrayBuffer(iv_b64));
+    const ciphertext = b64ToArrayBuffer(ct_b64);
+    const plain = await crypto.subtle.decrypt({name:'AES-GCM', iv}, sharedKey, ciphertext);
+    return arrayBufferToText(plain);
+  }catch(e){ console.error('decryptMessage failed',e); throw e; }
+}
+
+// -------------------------
+// UI helpers & status
+// -------------------------
+function showStatus(msg, isError=false){ if(authStatus) { authStatus.textContent = msg; authStatus.className = `mt-4 text-center text-sm ${isError?'text-red-400':'text-yellow-400'}`; } console.log('[STATUS]', msg); }
+
+// -------------------------
+// Robust pubKey fetch with retries (fixes "user not found")
+// Returns parsed JWK or null
+// -------------------------
+async function fetchPartnerPubKey(partnerUsername, retries = 5, delayMs = 700) {
+  const tryOnce = () => new Promise(resolve => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (!done) { done = true; resolve(undefined); }
+    }, Math.max(900, Math.floor(delayMs / 2)));
+
+    try {
+      gun.get('users').get(partnerUsername).get('pubKey').once((res) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(res);
+      });
+    } catch (e) {
+      if (!done) { done = true; clearTimeout(timer); resolve(undefined); }
+    }
+  });
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await tryOnce();
+      if (res !== undefined && res !== null && res !== '') {
+        try { return (typeof res === 'string') ? JSON.parse(res) : res; } catch (e) { return res; }
+      }
+    } catch (e) {
+      console.warn('fetchPartnerPubKey try failed', e);
+    }
+    await new Promise(r => setTimeout(r, delayMs));
+    delayMs = Math.min(2000, Math.round(delayMs * 1.2));
+  }
+  return null;
+}
+
+// -------------------------
+// AUTH: signup / login
+// -------------------------
+async function handleSignup(e){
+  e && e.preventDefault();
+  const username = document.getElementById('signup-username').value.trim();
+  const password = document.getElementById('signup-password').value;
+  if(!username || !password) { showStatus('Username and password are required.', true); return; }
+  showStatus('Checking username availability...');
+  const existing = await new Promise(resolve => gun.get('users').get(username).once(resolve, {wait:1500}));
+  if (existing && (existing.pubKey || existing.privKey)) { showStatus('Username already taken. Please choose another.', true); return; }
+
+  try{
+    showStatus('Generating keys...');
+    const kp = await generateKeys();
+    const pubJwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
+    const privJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+    const encryptedPriv = CryptoJS.AES.encrypt(JSON.stringify(privJwk), password).toString();
+    const node = gun.get('users').get(username);
+    node.put({ pubKey: JSON.stringify(pubJwk), privKey: encryptedPriv });
+    node.get('chats').put(null);
+    showStatus('Signup successful! Please log in.');
+    switchTab('login');
+    signupForm.reset();
+    document.getElementById('login-username').value = username;
+    document.getElementById('login-password').focus();
+  }catch(err){
+    console.error('signup error',err);
+    showStatus('Signup failed. Try again.', true);
   }
 }
-</script>
-<link rel="stylesheet" href="/index.css">
-</head>
-<body class="h-full font-sans bg-gray-900 text-gray-200 antialiased">
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root" class="h-full"></div>
-<script type="module" src="/index.tsx"></script>
+
+async function handleLogin(e){
+  e && e.preventDefault();
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  if(!username || !password){ showStatus('Username and password are required.', true); return; }
+  showStatus('Logging in...');
+  const data = await new Promise(resolve => gun.get('users').get(username).once(resolve, {wait:1500}));
+  if (!data || !data.privKey) { showStatus('Invalid username or password.', true); return; }
+  try{
+    const decrypted = CryptoJS.AES.decrypt(data.privKey, password).toString(CryptoJS.enc.Utf8);
+    if (!decrypted) { showStatus('Invalid username or password.', true); return; }
+    const privJwk = JSON.parse(decrypted);
+    const pubJwk = (typeof data.pubKey === 'string') ? JSON.parse(data.pubKey) : data.pubKey;
+    app.userKeys = { privateKey: await importPrivKey(privJwk), publicKey: await importPubKey(pubJwk) };
+    app.currentUser = username;
+    // store session
+    sessionStorage.setItem('currentUser', username);
+    sessionStorage.setItem('privKey', JSON.stringify(privJwk));
+    sessionStorage.setItem('pubKey', JSON.stringify(pubJwk));
+    showStatus('');
+    loginForm.reset();
+    await initChatPage();
+  }catch(err){
+    console.error('login error',err);
+    showStatus('Invalid username or password.', true);
+  }
+}
+
+function handleLogout(){
+  sessionStorage.clear();
+  app.currentUser = null;
+  app.userKeys = null;
+  app.currentChat = null;
+  app.sharedKeys = {};
+  contactsList.innerHTML = '';
+  chatMessages.innerHTML = '';
+  noContactsEl.classList.remove('hidden');
+  chatPage.classList.add('hidden'); authPage.classList.remove('hidden'); switchTab('login');
+}
+
+// -------------------------
+// Chat & contacts
+// -------------------------
+async function initChatPage(){
+  authPage.classList.add('hidden'); chatPage.classList.remove('hidden');
+  currentUsernameEl.textContent = app.currentUser;
+  userAvatarEl.textContent = app.currentUser.charAt(0).toUpperCase();
+  loadUserChats();
+}
+
+// Load chats (list) reliably
+function loadUserChats(){
+  contactsList.innerHTML = '';
+  noContactsEl.classList.remove('hidden');
+  const chatsRef = gun.get('users').get(app.currentUser).get('chats');
+  chatsRef.map().on((val, key) => {
+    if(!val) return;
+    let chatId = null;
+    if (typeof val === 'string') chatId = val;
+    else if (val['#']) chatId = val['#'];
+    if (!chatId) return;
+    const partner = chatId.split(':').find(n => n !== app.currentUser);
+    if (partner) addContactToList(partner, chatId);
+  });
+}
+
+function addContactToList(username, chatId){
+  noContactsEl.classList.add('hidden');
+  if (document.getElementById(`contact-${username}`)) return;
+  const contactEl = document.createElement('div');
+  contactEl.id = `contact-${username}`;
+  contactEl.dataset.chatId = chatId;
+  contactEl.className = 'flex items-center p-4 cursor-pointer hover:bg-gray-700 border-b border-gray-700';
+  contactEl.innerHTML = `<div class="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center font-bold text-white flex-shrink-0">${username.charAt(0).toUpperCase()}</div>
+  <div class="ml-3 flex-1 min-w-0"><p class="font-semibold text-white truncate">${username}</p><p class="text-sm text-gray-400 truncate">Click to open chat</p></div>`;
+  contactEl.addEventListener('click', ()=> openChat(username, chatId));
+  contactsList.prepend(contactEl);
+}
+
+// create chat and link both users
+async function createChatAndOpen(partnerUsername){
+  const chatId = [app.currentUser, partnerUsername].sort().join(':');
+  gun.get('users').get(app.currentUser).get('chats').set(chatId);
+  gun.get('users').get(partnerUsername).get('chats').set(chatId);
+  newChatModal.classList.add('hidden'); newChatForm.reset();
+  addContactToList(partnerUsername, chatId);
+  openChat(partnerUsername, chatId);
+}
+
+// New chat handler with robust lookup
+async function handleNewChat(e){
+  e && e.preventDefault();
+  const partnerUsername = document.getElementById('new-chat-username').value.trim();
+  newChatStatus.textContent = '';
+  if (!partnerUsername) { newChatStatus.textContent = 'Please enter a username.'; return; }
+  if (partnerUsername === app.currentUser) { newChatStatus.textContent = "You can't chat with yourself."; return; }
+  newChatStatus.textContent = 'Searching for user...';
+  const pub = await fetchPartnerPubKey(partnerUsername, 6, 700);
+  if (!pub) { newChatStatus.textContent = 'User not found.'; return; }
+  createChatAndOpen(partnerUsername);
+}
+
+// -------------------------
+// Shared key derivation & caching
+// -------------------------
+async function getSharedKey(partnerUsername){
+  if (app.sharedKeys[partnerUsername]) return app.sharedKeys[partnerUsername];
+  const partnerPubJwk = await fetchPartnerPubKey(partnerUsername, 6, 700);
+  if (!partnerPubJwk) throw new Error("Could not fetch partner's public key.");
+  const partnerPub = await importPubKey(partnerPubJwk);
+  const sharedKey = await deriveSharedKey(app.userKeys.privateKey, partnerPub);
+  app.sharedKeys[partnerUsername] = sharedKey;
+  return sharedKey;
+}
+
+// -------------------------
+// Open chat: attach listener and load history
+// -------------------------
+async function openChat(partnerUsername, chatId){
+  try{
+    await getSharedKey(partnerUsername);
+    if (app.currentChat && app.currentChat.id) gun.get('chat').get(app.currentChat.id).off();
+    app.currentChat = { partner: partnerUsername, id: chatId };
+    chatWelcome.classList.add('hidden'); chatMessagesContainer.classList.remove('hidden');
+    chatPartnerUsername.textContent = partnerUsername;
+    chatPartnerAvatar.textContent = partnerUsername.charAt(0).toUpperCase();
+    chatMessages.innerHTML = '';
+    document.querySelectorAll('#contacts-list > div').forEach(el => el.classList.remove('bg-gray-900'));
+    document.getElementById(`contact-${partnerUsername}`)?.classList.add('bg-gray-900');
+
+    const cached = localStorage.getItem(`chatcache:${chatId}`);
+    if (cached) {
+      try {
+        const msgs = JSON.parse(cached);
+        msgs.forEach(m => renderMessageDOM(m));
+      } catch(e){ console.warn('cache parse failed', e); }
+    }
+
+    gun.get('chat').get(chatId).map().on(async (msg, key) => {
+      if (!msg) return;
+      if (!msg.sender) return;
+      try {
+        const existing = JSON.parse(localStorage.getItem(`chatcache:${chatId}`) || '[]');
+        existing.push(msg);
+        if (existing.length > 200) existing.splice(0, existing.length-200);
+        localStorage.setItem(`chatcache:${chatId}`, JSON.stringify(existing));
+      } catch(e){ console.warn('cache save failed', e); }
+      renderMessageDOM(msg);
+    });
+
+  } catch(err){
+    console.error('openChat error', err);
+    alert('Could not open chat: ' + (err.message || err));
+  }
+}
+
+// -------------------------
+// Render message in DOM (handles text & files)
+// -------------------------
+async function renderMessageDOM(msg){
+  const ts = msg.timestamp || Date.now();
+  const snippet = (msg.ct||'').slice(0,8).replace(/[^a-z0-9]/gi,'');
+  const id = `msg-${ts}-${(msg.sender||'').slice(0,4)}-${snippet}`;
+  if (document.getElementById(id)) return;
+
+  const isMe = msg.sender === app.currentUser;
+  const wrapper = document.createElement('div');
+  wrapper.className = `flex ${isMe ? 'justify-end' : 'justify-start'}`;
+  wrapper.id = id;
+
+  if (msg.isFile || msg.ctFile) {
+    let fileMeta = msg;
+    if (!fileMeta.ct && fileMeta.ctFile) { fileMeta.ct = fileMeta.ctFile; fileMeta.iv = fileMeta.ivFile; }
+    try{
+      const sharedKey = await getSharedKey(msg.sender);
+      const decryptedBuffer = await crypto.subtle.decrypt(
+        {name:'AES-GCM', iv: new Uint8Array(b64ToArrayBuffer(fileMeta.iv))},
+        sharedKey,
+        b64ToArrayBuffer(fileMeta.ct)
+      );
+      const blob = new Blob([decryptedBuffer], { type: fileMeta.type || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      if (fileMeta.type && fileMeta.type.startsWith('image/')) {
+        wrapper.innerHTML = `<div class="max-w-xs md:max-w-md px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600' : 'bg-gray-700'} text-white">
+          <p class="font-semibold mb-1">${escapeHtml(fileMeta.name)}</p>
+          <img src="${url}" class="rounded-xl max-h-64 object-cover mt-2" />
+        </div>`;
+      } else {
+        wrapper.innerHTML = `<div class="max-w-xs md:max-w-md px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600' : 'bg-gray-700'} text-white">
+          <p class="font-semibold mb-1">${escapeHtml(fileMeta.name)}</p>
+          <a href="${url}" download="${escapeHtml(fileMeta.name)}" class="underline text-sm">Download</a>
+        </div>`;
+      }
+      chatMessages.appendChild(wrapper);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+      return;
+    }catch(e){
+      console.error('file decrypt fail', e);
+      wrapper.innerHTML = `<div class="max-w-xs md:max-w-md px-4 py-3 rounded-2xl bg-gray-600 text-white">🔒 [Encrypted file - failed to decrypt]</div>`;
+      chatMessages.appendChild(wrapper);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      return;
+    }
+  }
+
+  try{
+    let plaintext = '';
+    if (isMe && msg.text) plaintext = msg.text;
+    else if (!isMe && msg.ct) {
+      const sharedKey = await getSharedKey(msg.sender);
+      plaintext = await decryptMessage(sharedKey, msg.ct, msg.iv);
+    } else if (isMe && !msg.text && msg.ct) {
+      const sk = await getSharedKey(app.currentChat.partner);
+      plaintext = await decryptMessage(sk, msg.ct, msg.iv);
+    } else {
+      return;
+    }
+    wrapper.innerHTML = `<div class="max-w-xs md:max-w-md lg:max-w-lg px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600 text-white rounded-br-lg' : 'bg-gray-700 text-white rounded-bl-lg'}">
+      <p>${escapeHtml(plaintext)}</p>
+    </div>`;
+    chatMessages.appendChild(wrapper);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }catch(e){
+    console.error('renderMessageDOM decrypt error', e);
+  }
+}
+
+function escapeHtml(s){ return String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// -------------------------
+// Sending messages
+// -------------------------
+async function handleSendMessage(e){
+  e && e.preventDefault();
+  const text = (messageInput.value || '').trim();
+  if (!text || !app.currentChat) return;
+  try{
+    const sharedKey = await getSharedKey(app.currentChat.partner);
+    const encrypted = await encryptMessage(sharedKey, text);
+    const msg = { sender: app.currentUser, ct: encrypted.ct, iv: encrypted.iv, timestamp: Date.now(), text: text };
+    gun.get('chat').get(app.currentChat.id).set(msg);
+    messageInput.value = '';
+  }catch(err){
+    console.error('send message failed', err);
+    showStatus('Failed to send message.', true);
+  }
+}
+
+// -------------------------
+// FILE SHARING (encrypt with derived sharedKey, store in Gun)
+// -------------------------
+async function fileToArrayBuffer(file){ return await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsArrayBuffer(file); }); }
+
+async function encryptAndUploadFile(file){
+  if (!app.currentChat) return alert('Open a chat first!');
+  try{
+    const sharedKey = await getSharedKey(app.currentChat.partner);
+    const buffer = await fileToArrayBuffer(file);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encryptedBuffer = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, sharedKey, buffer);
+    const ctB64 = arrayBufferToB64(encryptedBuffer);
+    const ivB64 = arrayBufferToB64(iv);
+    const fileMsg = { sender: app.currentUser, name: file.name, type: file.type, size: file.size, iv: ivB64, ct: ctB64, timestamp: Date.now(), isFile: true };
+    gun.get('chat').get(app.currentChat.id).set(fileMsg);
+  }catch(e){ console.error('encryptAndUploadFile fail', e); showStatus('File send failed.', true); }
+}
+
+// Attach file button + input (place near emoji button)
+const fileInput = document.createElement('input');
+fileInput.type = 'file'; fileInput.style.display='none'; document.body.appendChild(fileInput);
+const fileButton = document.createElement('button');
+fileButton.type='button'; fileButton.textContent='📎'; fileButton.className='ml-2 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600'; fileButton.title='Attach file';
+if (emojiButton && emojiButton.parentNode) emojiButton.parentNode.insertBefore(fileButton, emojiButton.nextSibling);
+else messageForm.appendChild(fileButton);
+fileButton.addEventListener('click', ()=> fileInput.click());
+fileInput.addEventListener('change', async (ev)=>{ const f = ev.target.files?.[0]; if (!f) return; await encryptAndUploadFile(f); fileInput.value=''; });
+
+// -------------------------
+// Init, session restore, UI wiring
+// -------------------------
+function switchTab(tab){
+  if (tab==='login'){ tabLogin.classList.add('border-indigo-500','text-white'); tabLogin.classList.remove('text-gray-500'); tabSignup.classList.remove('border-indigo-500','text-white'); tabSignup.classList.add('text-gray-500'); loginForm.classList.remove('hidden'); signupForm.classList.add('hidden'); }
+  else { tabSignup.classList.add('border-indigo-500','text-white'); tabSignup.classList.remove('text-gray-500'); tabLogin.classList.remove('border-indigo-500','text-white'); tabLogin.classList.add('text-gray-500'); signupForm.classList.remove('hidden'); loginForm.classList.add('hidden'); }
+  authStatus.textContent='';
+}
+
+function applyTheme(theme){ const isLight = theme === 'light'; document.documentElement.classList.toggle('light', isLight); if (themeIcon){ themeIcon.innerHTML = isLight ? '<path ... />' : '<path ... />'; } localStorage.setItem('theme', theme); }
+
+// small peer check to warn user if peer down
+async function checkPeers() {
+  if (!GUN_PEERS || !GUN_PEERS.length) return;
+  let ok = false;
+  for (const p of GUN_PEERS) {
+    try {
+      const root = p.replace('/gun','/');
+      const res = await fetch(root, { method: 'GET', mode: 'cors' });
+      if (res && (res.status === 200 || res.status === 204 || res.status === 0)) { ok = true; break; }
+    } catch(e){}
+  }
+  if (!ok) showStatus('Warning: chat server may be unreachable. You may see "User not found" errors.', true);
+}
+
+async function initApp(){
+  populateEmojis();
+  const savedTheme = localStorage.getItem('theme') || 'dark'; applyTheme(savedTheme);
+  themeToggle?.addEventListener('click', ()=>{ const curr=document.documentElement.classList.contains('light') ? 'light' : 'dark'; applyTheme(curr==='light' ? 'dark' : 'light'); });
+
+  // session restore if saved keys exist
+  const username = sessionStorage.getItem('currentUser');
+  const privKeyStr = sessionStorage.getItem('privKey');
+  const pubKeyStr = sessionStorage.getItem('pubKey');
+  if (username && privKeyStr && pubKeyStr){
+    try{
+      app.currentUser = username;
+      app.userKeys = { privateKey: await importPrivKey(JSON.parse(privKeyStr)), publicKey: await importPubKey(JSON.parse(pubKeyStr)) };
+      await initChatPage();
+    }catch(e){ console.error('session restore failed', e); handleLogout(); }
+  } else { authPage.classList.remove('hidden'); chatPage.classList.add('hidden'); }
+
+  // wire events
+  tabLogin.addEventListener('click', ()=> switchTab('login'));
+  tabSignup.addEventListener('click', ()=> switchTab('signup'));
+  loginForm.addEventListener('submit', handleLogin);
+  signupForm.addEventListener('submit', handleSignup);
+  logoutButton.addEventListener('click', handleLogout);
+  newChatButton.addEventListener('click', ()=> { newChatModal.classList.remove('hidden'); document.getElementById('new-chat-username').focus(); });
+  cancelNewChat.addEventListener('click', ()=> { newChatModal.classList.add('hidden'); newChatForm.reset(); newChatStatus.textContent=''; });
+  newChatForm.addEventListener('submit', handleNewChat);
+  messageForm.addEventListener('submit', handleSendMessage);
+
+  // quick peer check (helps debug on Netlify)
+  checkPeers();
+}
+
+// start
+initApp().catch(e=>console.error('initApp error', e));
+
+// -------------------------
+// Network/peer watchers for debug (optional, helpful on Netlify)
+// -------------------------
+if (gun) {
+  try {
+    console.log('Gun peers:', GUN_PEERS);
+    GUN_PEERS.forEach(async p => {
+      try { const res = await fetch(p.replace('/gun','/')) ; console.log('peer ok', p, res.status); } catch(e){ console.warn('peer unreachable', p); }
+    });
+  } catch(e){ console.warn('peer check error', e); }
+}
+
+
+
+    </script>
 </body>
 </html>
