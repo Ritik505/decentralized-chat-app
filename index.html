@@ -73,18 +73,14 @@ html, body {
 
 /* Tabs */
 .flex.border-b { border-bottom: 2px solid var(--color-border) !important; }
-.flex.border-b button { 
-    color: var(--color-text-muted) !important; 
-    border-bottom: 2px solid transparent !important; 
-    transition: all 0.2s ease;
+.flex.border-b .tab-button {
+    color: var(--color-text-muted) !important;
+    border-bottom: 2px solid transparent !important;
+    transition: all 0.15s ease;
 }
-#tab-login { /* Active Tab */
+.flex.border-b .tab-button.active {
     color: var(--color-text-light) !important;
     border-bottom-color: var(--color-accent-primary) !important;
-}
-#tab-signup {
-    /* Ensure only the active tab shows the indigo bottom border */
-    border-color: transparent !important;
 }
 
 /* Form Inputs */
@@ -350,10 +346,10 @@ button[type="submit"]:hover, #new-chat-button:hover {
 
                 <!-- Tabs -->
                 <div class="flex border-b border-gray-700 mb-6">
-                    <button id="tab-login" class="flex-1 py-2 font-semibold text-white border-b-2 border-indigo-500">
+                    <button id="tab-login" class="tab-button flex-1 py-2 font-semibold active text-white">
                         Login
                     </button>
-                    <button id="tab-signup" class="flex-1 py-2 font-semibold text-gray-500">
+                    <button id="tab-signup" class="tab-button flex-1 py-2 font-semibold text-gray-500">
                         Sign Up
                     </button>
                 </div>
@@ -453,7 +449,7 @@ button[type="submit"]:hover, #new-chat-button:hover {
                     <div id="chat-welcome" class="flex-1 flex flex-col items-center justify-center text-gray-500 p-8 text-center">
                         <svg class="w-24 h-24 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 5.523-4.477 10-10 10S1 17.523 1 12 5.477 2 11 2s10 4.477 10 10z"></path></svg>
                         <h2 class="text-2xl font-semibold text-gray-400">Welcome to D-Chat</h2>
-                        <p>Select a chat on the left or start a new one.</p>
+                        <p>Select a chat or start a new one.</p>
                         <p class="text-sm mt-2">All messages are end-to-end encrypted.</p>
                     </div>
                     
@@ -976,9 +972,16 @@ fileInput.addEventListener('change', async (ev)=>{ const f = ev.target.files?.[0
 // Init, session restore, UI wiring
 // -------------------------
 function switchTab(tab){
-  if (tab==='login'){ tabLogin.classList.add('border-indigo-500','text-white'); tabLogin.classList.remove('text-gray-500'); tabSignup.classList.remove('border-indigo-500','text-white'); tabSignup.classList.add('text-gray-500'); loginForm.classList.remove('hidden'); signupForm.classList.add('hidden'); }
-  else { tabSignup.classList.add('border-indigo-500','text-white'); tabSignup.classList.remove('text-gray-500'); tabLogin.classList.remove('border-indigo-500','text-white'); tabLogin.classList.add('text-gray-500'); signupForm.classList.remove('hidden'); loginForm.classList.add('hidden'); }
-  authStatus.textContent='';
+  const setActive = (el)=>{ el.classList.add('active'); el.classList.remove('text-gray-500'); el.classList.add('text-white'); };
+  const setInactive = (el)=>{ el.classList.remove('active'); el.classList.remove('text-white'); el.classList.add('text-gray-500'); };
+  if (tab === 'login') {
+    setActive(tabLogin); setInactive(tabSignup);
+    loginForm.classList.remove('hidden'); signupForm.classList.add('hidden');
+  } else {
+    setActive(tabSignup); setInactive(tabLogin);
+    signupForm.classList.remove('hidden'); loginForm.classList.add('hidden');
+  }
+  authStatus.textContent = '';
 }
 
 function applyTheme(theme){ const isLight = theme === 'light'; document.documentElement.classList.toggle('light', isLight); if (themeIcon){ themeIcon.innerHTML = isLight ? '<path ... />' : '<path ... />'; } localStorage.setItem('theme', theme); }
