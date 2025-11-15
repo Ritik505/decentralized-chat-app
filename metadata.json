@@ -1,0 +1,5 @@
+{
+  "name": "D-Chat: Decentralized Chat",
+  "description": "A fully responsive, decentralized, and end-to-end encrypted chat application built with React, TypeScript, and Tailwind CSS. It uses Gun.js for decentralized data storage and the Web Crypto API for secure messaging.",
+  "requestFramePermissions": []
+}
