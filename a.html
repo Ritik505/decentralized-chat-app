@@ -325,17 +325,6 @@ button[type="submit"]:hover, #new-chat-button:hover {
       /* Make contact items more compact */
       .contact-item, #contacts-list > div { padding: 0.75rem; }
     }
-
-
-        #headline {
-        white-space: normal;
-        overflow-wrap: break-word;
-        text-align: center;
-        width: 100%;
-        border-right: none;      /* REMOVE BLUE CURSOR */
-        animation: none;         /* REMOVE BLINK EFFECT */
-        padding-right: 0;        /* FIX EXTRA SPACE */
-    }
     </style>
 </head>
 <body class="h-full font-sans text-gray-200 antialiased">
@@ -346,9 +335,7 @@ button[type="submit"]:hover, #new-chat-button:hover {
         <!-- ===== Auth Page ===== -->
         <div id="auth-page" class="flex items-center justify-center h-full p-4">
             <div class="w-full max-w-md bg-gray-800 rounded-2xl shadow-lg p-8">
-                <h1 id="headline" class="text-3xl font-bold text-center mb-2"></h1>
-
-
+                <h1 class="text-3xl font-bold text-center mb-2">D-Chat</h1>
                 <p class="text-center text-gray-400 mb-6">Decentralized & Encrypted</p>
                 <p class="text-center text-gray-500 text-sm italic">
                  by Ritik Verma
@@ -380,8 +367,6 @@ button[type="submit"]:hover, #new-chat-button:hover {
                         <button type="submit" class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-semibold transition duration-200">
                             Login
                         </button>
-
-
                     </form>
 
                     <!-- Signup Form -->
@@ -399,16 +384,10 @@ button[type="submit"]:hover, #new-chat-button:hover {
                         </button>
                     </form>
                 </div>
-                                        <!-- COPYRIGHT: shown only on the Login form -->
-                        <div class="text-center text-gray-500 text-sm mt-4">
-                            <p>© <span id="year"></span> Ritik Verma. All rights reserved.</p>
-                        </div>
 
                 <p id="auth-status" class="mt-4 text-center text-sm text-yellow-400"></p>
             </div>
-            
         </div>
-        
 
         <!-- ===== Chat Page ===== -->
         <div id="chat-page" class="hidden h-full">
@@ -1076,68 +1055,6 @@ if (gun) {
   } catch(e){ console.warn('peer check error', e); }
 }
 
-        document.getElementById("year").textContent = new Date().getFullYear();
-
-
-
-
-
-
-
-
-           const headline = document.getElementById("headline");
-
-    const messages = [
-        { text: "D-Chat", hold: 4000 },
-        { text: "Decentralized. Private. Yours.", hold: 3000 },
-        { text: "Secure Messaging for Web3.", hold: 3000 },
-        { text: "Chat Without Central Servers.", hold: 3000 },
-        { text: "Your Data, Your Control.", hold: 3000 },
-        { text: "End-to-End Encrypted. Forever.", hold: 3000 }
-    ];
-
-    let msgIndex = 0;
-    let charIndex = 0;
-    let isDeleting = false;
-
-    function typeEffect() {
-        let current = messages[msgIndex];
-        let fullText = current.text;
-
-        if (!isDeleting) {
-            // typing
-            headline.innerText = fullText.substring(0, charIndex + 1);
-            charIndex++;
-
-            if (charIndex === fullText.length) {
-                // finished typing, wait
-                setTimeout(() => {
-                    isDeleting = true;
-                }, current.hold);
-            }
-        } else {
-            // deleting
-            headline.innerText = fullText.substring(0, charIndex - 1);
-            charIndex--;
-
-            if (charIndex === 0) {
-                isDeleting = false;
-                msgIndex++;
-
-                if (msgIndex >= messages.length) {
-                    msgIndex = 0; // loop back
-                }
-            }
-        }
-
-        // speed
-        const speed = isDeleting ? 40 : 60;
-
-        setTimeout(typeEffect, speed);
-    }
-
-    // Start animation
-    typeEffect();
 
 
     </script>
