@@ -336,6 +336,12 @@ button[type="submit"]:hover, #new-chat-button:hover {
         animation: none;         /* REMOVE BLINK EFFECT */
         padding-right: 0;        /* FIX EXTRA SPACE */
     }
+
+    #typing-indicator {
+    font-style: italic;
+    color: var(--color-text-muted);
+}
+
     </style>
 </head>
 <body class="h-full font-sans text-gray-200 antialiased">
@@ -477,6 +483,10 @@ button[type="submit"]:hover, #new-chat-button:hover {
                         <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4">
                             <!-- Messages will be injected here -->
                         </div>
+
+                        <!-- Just above your message input in #chat-messages-container -->
+                          <div id="typing-indicator" class="text-gray-400 text-sm p-2 hidden">Typing...</div>
+
 
                         <!-- Message Input -->
                         <form id="message-form" class="p-4 border-t border-gray-700 bg-gray-800 relative">
@@ -1035,23 +1045,82 @@ async function renderMessageDOM(msg){
 function escapeHtml(s){ return String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // -------------------------
-// Sending messages
+// Sending Messages
 // -------------------------
-async function handleSendMessage(e){
-  e && e.preventDefault();
-  const text = (messageInput.value || '').trim();
-  if (!text || !app.currentChat) return;
-  try{
-    const sharedKey = await getSharedKey(app.currentChat.partner);
-    const encrypted = await encryptMessage(sharedKey, text);
-    const msg = { sender: app.currentUser, ct: encrypted.ct, iv: encrypted.iv, timestamp: Date.now(), text: text };
-    gun.get('chat').get(app.currentChat.id).set(msg);
-    messageInput.value = '';
-  }catch(err){
-    console.error('send message failed', err);
-    showStatus('Failed to send message.', true);
-  }
+async function handleSendMessage(e) {
+    e && e.preventDefault();
+    const text = (messageInput.value || '').trim();
+    if (!text || !app.currentChat) return;
+
+    try {
+        const sharedKey = await getSharedKey(app.currentChat.partner);
+        const encrypted = await encryptMessage(sharedKey, text);
+
+        // Use a unique key for each message (timestamp + random)
+        const msgKey = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const msg = {
+            sender: app.currentUser,
+            ct: encrypted.ct,
+            iv: encrypted.iv,
+            timestamp: Date.now()
+        };
+
+        // Store encrypted message
+        gun.get('chat').get(app.currentChat.id).get(msgKey).put(msg);
+
+        // Clear input
+        messageInput.value = '';
+
+        // Stop typing immediately
+        stopTyping();
+    } catch (err) {
+        console.error('send message failed', err);
+        showStatus('Failed to send message.', true);
+    }
 }
+
+// -------------------------
+// Typing Indicator
+// -------------------------
+let typingTimeout;
+
+function startTyping() {
+    if (!app.currentChat) return;
+
+    gun.get('typing').get(app.currentChat.id).get(app.currentUser).put(true);
+
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(stopTyping, 2000);
+}
+
+function stopTyping() {
+    if (!app.currentChat) return;
+    gun.get('typing').get(app.currentChat.id).get(app.currentUser).put(false);
+}
+
+messageInput.addEventListener('input', startTyping);
+
+// -------------------------
+// Listen for Partner Typing
+// -------------------------
+let currentTypingListener;
+
+function listenTyping(chatId, partnerUsername) {
+    // Remove previous listener if any
+    if (currentTypingListener) currentTypingListener.off();
+
+    const typingRef = gun.get('typing').get(chatId).get(partnerUsername);
+
+    typingRef.on((isTyping) => {
+        if (!typingIndicator) return;
+        typingIndicator.style.display = isTyping ? 'block' : 'none';
+    });
+
+    currentTypingListener = typingRef;
+}
+
+
+
 
 // -------------------------
 // FILE SHARING (encrypt with derived sharedKey, store in Gun)
@@ -1230,6 +1299,14 @@ function typeEffect() {
 
 // Start animation
 typeEffect();
+
+
+
+
+
+
+
+
 
 </script>
 
