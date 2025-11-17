@@ -524,8 +524,8 @@ button[type="submit"]:hover, #new-chat-button:hover {
 
 
     <!-- JavaScript -->
-    <script type="module">
-      // Decentralized Chat - Full Fixed JS (single file)
+<script type="module">
+// Decentralized Chat - Full Fixed JS (single file)
 // Paste inside your existing <script type="module"> (no <script> tags)
 
 // -------------------------
@@ -540,6 +540,9 @@ if (!gun) {
   alert('Gun.js failed to load. Check network or CDN.');
 }
 const app = { currentUser: null, currentChat: null, sharedKeys: {}, userKeys: null };
+
+// message store: { [chatId]: [ { _key, sender, ct, iv, text, timestamp, ... } ] }
+let messageStore = {};
 
 // -------------------------
 // DOM elements (existing IDs expected)
@@ -568,7 +571,7 @@ const chatPartnerUsername = document.getElementById('chat-partner-username');
 const chatMessages = document.getElementById('chat-messages');
 const sidebarEl = document.getElementById('sidebar');
 const backToContactsBtn = document.getElementById('back-to-contacts');
-     const messageForm = document.getElementById('message-form');
+const messageForm = document.getElementById('message-form');
 const messageInput = document.getElementById('message-input');
 const emojiButton = document.getElementById('emoji-button');
 const emojiPicker = document.getElementById('emoji-picker');
@@ -820,46 +823,103 @@ async function getSharedKey(partnerUsername){
 }
 
 // -------------------------
+// DOM helpers: sort/render
+// -------------------------
+function sortMessagesInDOM() {
+  const items = Array.from(chatMessages.children);
+  items.sort((a, b) => {
+    const ta = parseInt(a.dataset.ts || 0, 10);
+    const tb = parseInt(b.dataset.ts || 0, 10);
+    return ta - tb; // ascending (old → new)
+  });
+  chatMessages.innerHTML = '';
+  items.forEach(i => chatMessages.appendChild(i));
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// -------------------------
 // Open chat: attach listener and load history
 // -------------------------
 async function openChat(partnerUsername, chatId){
   try{
     await getSharedKey(partnerUsername);
-    if (app.currentChat && app.currentChat.id) gun.get('chat').get(app.currentChat.id).off();
+
+    // remove any previous chat listeners
+    if (app.currentChat && app.currentChat.id) {
+      try { gun.get('chat').get(app.currentChat.id).off(); } catch(e){ /* ignore */ }
+    }
+
     app.currentChat = { partner: partnerUsername, id: chatId };
     chatWelcome.classList.add('hidden'); chatMessagesContainer.classList.remove('hidden');
     chatPartnerUsername.textContent = partnerUsername;
     chatPartnerAvatar.textContent = partnerUsername.charAt(0).toUpperCase();
     chatMessages.innerHTML = '';
+
     document.querySelectorAll('#contacts-list > div').forEach(el => el.classList.remove('bg-gray-900'));
     document.getElementById(`contact-${partnerUsername}`)?.classList.add('bg-gray-900');
 
+    // initialize message store for this chat
+    messageStore[chatId] = messageStore[chatId] || [];
+
+    // load cache if present (and render sorted)
     const cached = localStorage.getItem(`chatcache:${chatId}`);
     if (cached) {
       try {
-        const msgs = JSON.parse(cached);
-        msgs.forEach(m => renderMessageDOM(m));
+        const msgs = JSON.parse(cached) || [];
+        msgs.sort((a,b) => (a.timestamp||0) - (b.timestamp||0));
+        messageStore[chatId] = msgs;
+        chatMessages.innerHTML = '';
+        for (const m of messageStore[chatId]) {
+          await renderMessageDOM(m);
+        }
+        chatMessages.scrollTop = chatMessages.scrollHeight;
       } catch(e){ console.warn('cache parse failed', e); }
     }
 
+    // Track which keys we've already rendered to prevent duplicates
+    const renderedKeys = new Set();
+    messageStore[chatId].forEach(m => { if (m._key) renderedKeys.add(m._key); });
+
+    // attach real-time listener (map().on)
     gun.get('chat').get(chatId).map().on(async (msg, key) => {
-      if (!msg) return;
-      if (!msg.sender) return;
+      if (!msg || !key) return;
+      
+      // Skip if already rendered
+      if (renderedKeys.has(key)) return;
+      renderedKeys.add(key);
+
+      if (!msg.timestamp) msg.timestamp = Date.now();
+
+      const fullMsg = Object.assign({}, msg, { _key: key });
+
+      // save/update message in store
+      const store = messageStore[chatId] = messageStore[chatId] || [];
+      const idx = store.findIndex(m => m._key === key);
+      if (idx === -1) store.push(fullMsg);
+      else store[idx] = fullMsg;
+
+      // sort store
+      store.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+      // persist limited cache
       try {
-        const existing = JSON.parse(localStorage.getItem(`chatcache:${chatId}`) || '[]');
-        existing.push(msg);
-        if (existing.length > 200) existing.splice(0, existing.length-200);
-        localStorage.setItem(`chatcache:${chatId}`, JSON.stringify(existing));
-      } catch(e){ console.warn('cache save failed', e); }
-      renderMessageDOM(msg);
+        const copyForCache = store.slice(-200);
+        localStorage.setItem(`chatcache:${chatId}`, JSON.stringify(copyForCache));
+      } catch (e) { console.warn('cache save failed', e); }
+
+      // re-render: clear and render in correct order
+      chatMessages.innerHTML = '';
+      for (const m of store) {
+        await renderMessageDOM(m);
+      }
+      chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
-    // On small screens hide the sidebar so chat takes full screen
     if (window.innerWidth <= 640 && sidebarEl) {
       sidebarEl.classList.add('hidden');
     }
- 
-   } catch(err){
+
+  } catch(err){
     console.error('openChat error', err);
     alert('Could not open chat: ' + (err.message || err));
   }
@@ -869,15 +929,23 @@ async function openChat(partnerUsername, chatId){
 // Render message in DOM (handles text & files)
 // -------------------------
 async function renderMessageDOM(msg){
+  // msg may contain _key (gun key) or not (from cache/older)
   const ts = msg.timestamp || Date.now();
   const snippet = (msg.ct||'').slice(0,8).replace(/[^a-z0-9]/gi,'');
-  const id = `msg-${ts}-${(msg.sender||'').slice(0,4)}-${snippet}`;
+  // stable DOM id: prefer Gun key if present
+  const id = msg._key ? `msg-${msg._key}` : `msg-${ts}-${(msg.sender||'').slice(0,4)}-${snippet}`;
   if (document.getElementById(id)) return;
 
   const isMe = msg.sender === app.currentUser;
   const wrapper = document.createElement('div');
-  wrapper.className = `flex ${isMe ? 'justify-end' : 'justify-start'}`;
+  wrapper.className = `flex ${isMe ? 'justify-end' : 'justify-start'} items-end space-x-2`;
   wrapper.id = id;
+  wrapper.dataset.ts = ts;
+
+  // Format timestamp
+  const msgTime = new Date(ts);
+  const timeStr = msgTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const dateStr = msgTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   if (msg.isFile || msg.ctFile) {
     let fileMeta = msg;
@@ -891,17 +959,31 @@ async function renderMessageDOM(msg){
       );
       const blob = new Blob([decryptedBuffer], { type: fileMeta.type || 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
+      
+      let fileHTML = `<div class="max-w-xs md:max-w-md px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600' : 'bg-gray-700'} text-white">
+        <p class="font-semibold mb-1">${escapeHtml(fileMeta.name)}</p>`;
+      
       if (fileMeta.type && fileMeta.type.startsWith('image/')) {
-        wrapper.innerHTML = `<div class="max-w-xs md:max-w-md px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600' : 'bg-gray-700'} text-white">
-          <p class="font-semibold mb-1">${escapeHtml(fileMeta.name)}</p>
-          <img src="${url}" class="rounded-xl max-h-64 object-cover mt-2" />
-        </div>`;
+        fileHTML += `<img src="${url}" class="rounded-xl max-h-64 object-cover mt-2" />`;
       } else {
-        wrapper.innerHTML = `<div class="max-w-xs md:max-w-md px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600' : 'bg-gray-700'} text-white">
-          <p class="font-semibold mb-1">${escapeHtml(fileMeta.name)}</p>
-          <a href="${url}" download="${escapeHtml(fileMeta.name)}" class="underline text-sm">Download</a>
-        </div>`;
+        fileHTML += `<a href="${url}" download="${escapeHtml(fileMeta.name)}" class="underline text-sm">Download</a>`;
       }
+      
+      fileHTML += `</div>`;
+      
+      wrapper.innerHTML = fileHTML;
+      
+      // Add timestamp element
+      const timeEl = document.createElement('div');
+      timeEl.className = 'text-xs text-gray-500 whitespace-nowrap';
+      timeEl.innerHTML = `<div>${dateStr}</div><div>${timeStr}</div>`;
+      
+      if (isMe) {
+        wrapper.appendChild(timeEl);
+      } else {
+        wrapper.insertBefore(timeEl, wrapper.firstChild);
+      }
+      
       chatMessages.appendChild(wrapper);
       chatMessages.scrollTop = chatMessages.scrollHeight;
       setTimeout(()=>URL.revokeObjectURL(url), 60000);
@@ -927,9 +1009,22 @@ async function renderMessageDOM(msg){
     } else {
       return;
     }
+    
     wrapper.innerHTML = `<div class="max-w-xs md:max-w-md lg:max-w-lg px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600 text-white rounded-br-lg' : 'bg-gray-700 text-white rounded-bl-lg'}">
       <p>${escapeHtml(plaintext)}</p>
     </div>`;
+    
+    // Add timestamp element
+    const timeEl = document.createElement('div');
+    timeEl.className = 'text-xs text-gray-500 whitespace-nowrap';
+    timeEl.innerHTML = `<div>${dateStr}</div><div>${timeStr}</div>`;
+    
+    if (isMe) {
+      wrapper.appendChild(timeEl);
+    } else {
+      wrapper.insertBefore(timeEl, wrapper.firstChild);
+    }
+    
     chatMessages.appendChild(wrapper);
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }catch(e){
@@ -1056,7 +1151,7 @@ async function initApp(){
     document.querySelectorAll('#contacts-list > div').forEach(el => el.classList.remove('bg-gray-900'));
     app.currentChat = null;
   });
- 
+
    // quick peer check (helps debug on Netlify)
    checkPeers();
  }
@@ -1076,70 +1171,67 @@ if (gun) {
   } catch(e){ console.warn('peer check error', e); }
 }
 
-        document.getElementById("year").textContent = new Date().getFullYear();
+document.getElementById("year").textContent = new Date().getFullYear();
 
 
 
 
 
+const headline = document.getElementById("headline");
 
+const messages = [
+    { text: "D-Chat", hold: 2000 },
+    { text: "Your Data, Your Control.", hold: 3000 },
+    { text: "Decentralized. Private. Yours.", hold: 3000 },
+    { text: "Secure Messaging for Web3.", hold: 3000 },
+    { text: "Chat Without Central Servers.", hold: 3000 },
+    { text: "End-to-End Encrypted. Forever.", hold: 3000 }
+];
 
+let msgIndex = 0;
+let charIndex = 0;
+let isDeleting = false;
 
-           const headline = document.getElementById("headline");
+function typeEffect() {
+    let current = messages[msgIndex];
+    let fullText = current.text;
 
-    const messages = [
-        { text: "D-Chat", hold: 4000 },
-        { text: "Decentralized. Private. Yours.", hold: 3000 },
-        { text: "Secure Messaging for Web3.", hold: 3000 },
-        { text: "Chat Without Central Servers.", hold: 3000 },
-        { text: "Your Data, Your Control.", hold: 3000 },
-        { text: "End-to-End Encrypted. Forever.", hold: 3000 }
-    ];
+    if (!isDeleting) {
+        // typing
+        headline.innerText = fullText.substring(0, charIndex + 1);
+        charIndex++;
 
-    let msgIndex = 0;
-    let charIndex = 0;
-    let isDeleting = false;
+        if (charIndex === fullText.length) {
+            // finished typing, wait
+            setTimeout(() => {
+                isDeleting = true;
+            }, current.hold);
+        }
+    } else {
+        // deleting
+        headline.innerText = fullText.substring(0, charIndex - 1);
+        charIndex--;
 
-    function typeEffect() {
-        let current = messages[msgIndex];
-        let fullText = current.text;
+        if (charIndex === 0) {
+            isDeleting = false;
+            msgIndex++;
 
-        if (!isDeleting) {
-            // typing
-            headline.innerText = fullText.substring(0, charIndex + 1);
-            charIndex++;
-
-            if (charIndex === fullText.length) {
-                // finished typing, wait
-                setTimeout(() => {
-                    isDeleting = true;
-                }, current.hold);
-            }
-        } else {
-            // deleting
-            headline.innerText = fullText.substring(0, charIndex - 1);
-            charIndex--;
-
-            if (charIndex === 0) {
-                isDeleting = false;
-                msgIndex++;
-
-                if (msgIndex >= messages.length) {
-                    msgIndex = 0; // loop back
-                }
+            if (msgIndex >= messages.length) {
+                msgIndex = 0; // loop back
             }
         }
-
-        // speed
-        const speed = isDeleting ? 40 : 60;
-
-        setTimeout(typeEffect, speed);
     }
 
-    // Start animation
-    typeEffect();
+    // speed
+    const speed = isDeleting ? 40 : 60;
 
+    setTimeout(typeEffect, speed);
+}
 
-    </script>
+// Start animation
+typeEffect();
+
+</script>
+
 </body>
 </html>
