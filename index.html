@@ -1103,7 +1103,7 @@ messageInput.addEventListener('input', startTyping);
 // -------------------------
 // Listen for Partner Typing
 // -------------------------
-let currentTypingListener;
+let currentTypingListener = null; // declare globally
 
 function listenTyping(chatId, partnerUsername) {
     // Remove previous listener if any
