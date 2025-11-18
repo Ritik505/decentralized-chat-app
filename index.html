@@ -533,7 +533,7 @@ button[type="submit"]:hover, #new-chat-button:hover {
 // -------------------------
 const GUN_PEERS = [
   'https://gun-peer-server.onrender.com/gun'
-];
+].filter(p => typeof p === 'string' && /^https?:\/\//.test(p)); // drop malformed entries
 
 const gun = (typeof window !== 'undefined' && window.Gun) ? Gun({ peers: GUN_PEERS }) : null;
 if (!gun) {
@@ -610,6 +610,25 @@ function b64ToArrayBuffer(b64){
 function textToArrayBuffer(s){ return new TextEncoder().encode(s); }
 function arrayBufferToText(buf){ return new TextDecoder().decode(buf); }
 
+// -------------------------
+// Symmetric encrypt/decrypt helpers (AES-GCM) used by send/render
+// -------------------------
+async function encryptMessage(sharedKey, plaintext){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encBuf = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, sharedKey, textToArrayBuffer(plaintext));
+  return { ct: arrayBufferToB64(encBuf), iv: arrayBufferToB64(iv) };
+}
+
+async function decryptMessage(sharedKey, ctB64, ivB64){
+  const iv = new Uint8Array(b64ToArrayBuffer(ivB64));
+  const ct = b64ToArrayBuffer(ctB64);
+  const plainBuf = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, sharedKey, ct);
+  return arrayBufferToText(plainBuf);
+}
+
+// -------------------------
+// ECDH/ECDSA key & crypto helpers
+// -------------------------
 async function generateKeys(){
   return await crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-256'}, true, ['deriveKey']);
 }
@@ -618,19 +637,12 @@ async function importPrivKey(jwk){ return await crypto.subtle.importKey('jwk', j
 async function deriveSharedKey(myPrivateKey, partnerPublicKey){
   return await crypto.subtle.deriveKey({ name:'ECDH', public: partnerPublicKey }, myPrivateKey, { name:'AES-GCM', length:256 }, true, ['encrypt','decrypt']);
 }
-async function encryptMessage(sharedKey, plaintext){
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, sharedKey, textToArrayBuffer(plaintext));
-  return { ct: arrayBufferToB64(ct), iv: arrayBufferToB64(iv) };
-}
-async function decryptMessage(sharedKey, ct_b64, iv_b64){
-  try{
-    const iv = new Uint8Array(b64ToArrayBuffer(iv_b64));
-    const ciphertext = b64ToArrayBuffer(ct_b64);
-    const plain = await crypto.subtle.decrypt({name:'AES-GCM', iv}, sharedKey, ciphertext);
-    return arrayBufferToText(plain);
-  }catch(e){ console.error('decryptMessage failed',e); throw e; }
-}
+// ECDSA helpers for signing/verification (P-256)
+async function generateSigningKeys(){ return await crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-256'}, true, ['sign']); }
+async function importEcdsaPubKey(jwk){ return await crypto.subtle.importKey('jwk', jwk, {name:'ECDSA', namedCurve:'P-256'}, true, ['verify']); }
+async function importEcdsaPrivKey(jwk){ return await crypto.subtle.importKey('jwk', jwk, {name:'ECDSA', namedCurve:'P-256'}, true, ['sign']); }
+async function signBuffer(privKey, buf){ const sig = await crypto.subtle.sign({name:'ECDSA', hash:'SHA-256'}, privKey, buf); return arrayBufferToB64(sig); }
+async function verifyBuffer(pubKey, sigB64, buf){ try{ return await crypto.subtle.verify({name:'ECDSA', hash:'SHA-256'}, pubKey, b64ToArrayBuffer(sigB64), buf); }catch(e){return false;} }
 
 // -------------------------
 // UI helpers & status
@@ -649,7 +661,7 @@ async function fetchPartnerPubKey(partnerUsername, retries = 5, delayMs = 700) {
     }, Math.max(900, Math.floor(delayMs / 2)));
 
     try {
-      gun.get('users').get(partnerUsername).get('pubKey').once((res) => {
+      gun.get('users').get(partnerUsername).once((res) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
@@ -662,9 +674,47 @@ async function fetchPartnerPubKey(partnerUsername, retries = 5, delayMs = 700) {
 
   for (let i = 0; i < retries; i++) {
     try {
-      const res = await tryOnce();
-      if (res !== undefined && res !== null && res !== '') {
-        try { return (typeof res === 'string') ? JSON.parse(res) : res; } catch (e) { return res; }
+      const data = await tryOnce();
+      if (data === undefined || data === null || data === '') { /* retry */ }
+      else {
+        // Backwards compatibility: older field "pubKey" may exist (unenhanced)
+        let encPubStr = (typeof data.pubEncKey === 'string') ? data.pubEncKey : (data.pubKey ? (typeof data.pubKey === 'string' ? data.pubKey : JSON.stringify(data.pubKey)) : null);
+        let signPubStr = (typeof data.pubSignKey === 'string') ? data.pubSignKey : (data.sigPub ? (typeof data.sigPub === 'string' ? data.sigPub : JSON.stringify(data.sigPub)) : null);
+        let encPubSig = data.pubEncKeySig || data.encPubSig || data.pubKeySig || null;
+
+        if (!encPubStr) {
+          // fallback: maybe pubKey is stored as object
+          if (data.pubKey) encPubStr = (typeof data.pubKey === 'string') ? data.pubKey : JSON.stringify(data.pubKey);
+        }
+
+        if (!encPubStr) return null;
+
+        try {
+          const encPubJwk = (typeof encPubStr === 'string') ? JSON.parse(encPubStr) : encPubStr;
+
+          // If we have a signing public key + signature, verify the encryption pub key
+          if (signPubStr && encPubSig) {
+            const signPubJwk = (typeof signPubStr === 'string') ? JSON.parse(signPubStr) : signPubStr;
+            try {
+              const signPub = await importEcdsaPubKey(signPubJwk);
+              const verified = await verifyBuffer(signPub, encPubSig, textToArrayBuffer(JSON.stringify(encPubJwk)));
+              if (!verified) {
+                console.warn('Partner public encryption key signature verification FAILED for', partnerUsername);
+                // treat as not found for security
+                return null;
+              }
+              return encPubJwk;
+            } catch (e) {
+              console.warn('signature verification error', e);
+              return null;
+            }
+          } else {
+            // No signature available — return the pubkey (unverified). Caller may choose to refuse.
+            return encPubJwk;
+          }
+        } catch (e) {
+          return data.pubKey || null;
+        }
       }
     } catch (e) {
       console.warn('fetchPartnerPubKey try failed', e);
@@ -685,26 +735,39 @@ async function handleSignup(e){
   if(!username || !password) { showStatus('Username and password are required.', true); return; }
   showStatus('Checking username availability...');
   const existing = await new Promise(resolve => gun.get('users').get(username).once(resolve, {wait:1500}));
-  if (existing && (existing.pubKey || existing.privKey)) { showStatus('Username already taken. Please choose another.', true); return; }
+  if (existing && (existing.pubEncKey || existing.pubKey)) { showStatus('Username already taken. Please choose another.', true); return; }
 
   try{
     showStatus('Generating keys...');
-    const kp = await generateKeys();
-    const pubJwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
-    const privJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
-    const encryptedPriv = CryptoJS.AES.encrypt(JSON.stringify(privJwk), password).toString();
+    // generate ECDH keypair for encryption + ECDSA keypair for signing
+    const encKp = await generateKeys(); // ECDH
+    const signKp = await generateSigningKeys(); // ECDSA
+    const encPubJwk = await crypto.subtle.exportKey('jwk', encKp.publicKey);
+    const encPrivJwk = await crypto.subtle.exportKey('jwk', encKp.privateKey);
+    const signPubJwk = await crypto.subtle.exportKey('jwk', signKp.publicKey);
+    const signPrivJwk = await crypto.subtle.exportKey('jwk', signKp.privateKey);
+    // sign the encryption public key with the signing private key
+    const signPrivImported = await importEcdsaPrivKey(signPrivJwk);
+    const encPubStr = JSON.stringify(encPubJwk);
+    const encPubSig = await signBuffer(signPrivImported, textToArrayBuffer(encPubStr));
+    // store only public material on Gun; do NOT store private keys on the network
     const node = gun.get('users').get(username);
-    node.put({ pubKey: JSON.stringify(pubJwk), privKey: encryptedPriv });
-    node.get('chats').put(null);
-    showStatus('Signup successful! Please log in.');
+    node.put({ pubEncKey: encPubStr, pubSignKey: JSON.stringify(signPubJwk), pubEncKeySig: encPubSig });
+    // keep encrypted private keys locally (encrypted with password). User must back this up.
+    const encryptedEncPriv = CryptoJS.AES.encrypt(JSON.stringify(encPrivJwk), password).toString();
+    const encryptedSignPriv = CryptoJS.AES.encrypt(JSON.stringify(signPrivJwk), password).toString();
+    localStorage.setItem(`privEnc:${username}`, encryptedEncPriv);
+    localStorage.setItem(`privSign:${username}`, encryptedSignPriv);
+     node.get('chats').put(null);
+    showStatus('Signup successful! Private keys stored locally. Please log in.');
     switchTab('login');
     signupForm.reset();
     document.getElementById('login-username').value = username;
     document.getElementById('login-password').focus();
-  }catch(err){
-    console.error('signup error',err);
-    showStatus('Signup failed. Try again.', true);
-  }
+   }catch(err){
+     console.error('signup error',err);
+     showStatus('Signup failed. Try again.', true);
+   }
 }
 
 async function handleLogin(e){
@@ -713,26 +776,36 @@ async function handleLogin(e){
   const password = document.getElementById('login-password').value;
   if(!username || !password){ showStatus('Username and password are required.', true); return; }
   showStatus('Logging in...');
+  // fetch public material from network (we will verify signatures when deriving shared keys)
   const data = await new Promise(resolve => gun.get('users').get(username).once(resolve, {wait:1500}));
-  if (!data || !data.privKey) { showStatus('Invalid username or password.', true); return; }
+  if (!data || (!data.pubEncKey && !data.pubKey)) { showStatus('Invalid username or password.', true); return; }
   try{
-    const decrypted = CryptoJS.AES.decrypt(data.privKey, password).toString(CryptoJS.enc.Utf8);
-    if (!decrypted) { showStatus('Invalid username or password.', true); return; }
-    const privJwk = JSON.parse(decrypted);
-    const pubJwk = (typeof data.pubKey === 'string') ? JSON.parse(data.pubKey) : data.pubKey;
-    app.userKeys = { privateKey: await importPrivKey(privJwk), publicKey: await importPubKey(pubJwk) };
-    app.currentUser = username;
-    // store session
-    sessionStorage.setItem('currentUser', username);
-    sessionStorage.setItem('privKey', JSON.stringify(privJwk));
-    sessionStorage.setItem('pubKey', JSON.stringify(pubJwk));
-    showStatus('');
-    loginForm.reset();
-    await initChatPage();
-  }catch(err){
-    console.error('login error',err);
-    showStatus('Invalid username or password.', true);
-  }
+    // private keys must be present locally (we do NOT store them on the server anymore)
+    const encPrivEnc = localStorage.getItem(`privEnc:${username}`);
+    const signPrivEnc = localStorage.getItem(`privSign:${username}`);
+    if (!encPrivEnc || !signPrivEnc) { showStatus('Private keys not found locally. Import backup or sign up on this device.', true); return; }
+    const decEnc = CryptoJS.AES.decrypt(encPrivEnc, password).toString(CryptoJS.enc.Utf8);
+    const decSign = CryptoJS.AES.decrypt(signPrivEnc, password).toString(CryptoJS.enc.Utf8);
+    if (!decEnc || !decSign) { showStatus('Invalid password for local keys.', true); return; }
+    const privEncJwk = JSON.parse(decEnc);
+    const privSignJwk = JSON.parse(decSign);
+    app.userKeys = { privateEnc: await importPrivKey(privEncJwk), privateSign: await importEcdsaPrivKey(privSignJwk) };
+    // public data kept reachable in session for convenience
+    const pubEncJwk = data.pubEncKey ? JSON.parse(data.pubEncKey) : (data.pubKey ? (typeof data.pubKey === 'string' ? JSON.parse(data.pubKey) : data.pubKey) : null);
+    const pubSignJwk = data.pubSignKey ? JSON.parse(data.pubSignKey) : (data.sigPub ? (typeof data.sigPub === 'string' ? JSON.parse(data.sigPub) : data.sigPub) : null);
+    app.userPublic = { enc: pubEncJwk, sign: pubSignJwk };
+     app.currentUser = username;
+     // store session
+     sessionStorage.setItem('currentUser', username);
+    // Do NOT store raw private keys in sessionStorage. Keep only a marker.
+    sessionStorage.setItem('hasLocalKeys', '1');
+     showStatus('');
+     loginForm.reset();
+     await initChatPage();
+   }catch(err){
+     console.error('login error',err);
+     showStatus('Invalid username or password.', true);
+   }
 }
 
 function handleLogout(){
@@ -815,11 +888,14 @@ async function handleNewChat(e){
 async function getSharedKey(partnerUsername){
   if (app.sharedKeys[partnerUsername]) return app.sharedKeys[partnerUsername];
   const partnerPubJwk = await fetchPartnerPubKey(partnerUsername, 6, 700);
-  if (!partnerPubJwk) throw new Error("Could not fetch partner's public key.");
+  if (!partnerPubJwk) throw new Error("Could not fetch (and verify) partner's public key.");
   const partnerPub = await importPubKey(partnerPubJwk);
-  const sharedKey = await deriveSharedKey(app.userKeys.privateKey, partnerPub);
-  app.sharedKeys[partnerUsername] = sharedKey;
-  return sharedKey;
+  // ensure we have our encryption private key available
+  const myPriv = app.userKeys && (app.userKeys.privateEnc || app.userKeys.privateKey);
+  if (!myPriv) throw new Error('Local encryption private key missing. You must log in with local keys.');
+  const sharedKey = await deriveSharedKey(myPriv, partnerPub);
+   app.sharedKeys[partnerUsername] = sharedKey;
+   return sharedKey;
 }
 
 // -------------------------
@@ -951,7 +1027,11 @@ async function renderMessageDOM(msg){
     let fileMeta = msg;
     if (!fileMeta.ct && fileMeta.ctFile) { fileMeta.ct = fileMeta.ctFile; fileMeta.iv = fileMeta.ivFile; }
     try{
-      const sharedKey = await getSharedKey(msg.sender);
+      // If the message was sent by us, derive the shared key with the current chat partner.
+      // Otherwise derive using the sender.
+      const partnerForKey = app.currentChat?.partner || msg.sender;
+      if (!partnerForKey) throw new Error('No chat partner available to derive shared key');
+      const sharedKey = await getSharedKey(partnerForKey);
       const decryptedBuffer = await crypto.subtle.decrypt(
         {name:'AES-GCM', iv: new Uint8Array(b64ToArrayBuffer(fileMeta.iv))},
         sharedKey,
@@ -998,18 +1078,12 @@ async function renderMessageDOM(msg){
   }
 
   try{
-    let plaintext = '';
-    if (isMe && msg.text) plaintext = msg.text;
-    else if (!isMe && msg.ct) {
-      const sharedKey = await getSharedKey(msg.sender);
-      plaintext = await decryptMessage(sharedKey, msg.ct, msg.iv);
-    } else if (isMe && !msg.text && msg.ct) {
-      const sk = await getSharedKey(app.currentChat.partner);
-      plaintext = await decryptMessage(sk, msg.ct, msg.iv);
-    } else {
-      return;
-    }
-    
+    // Always decrypt from ciphertext. Do NOT rely on stored plaintext.
+    const partnerForKey = app.currentChat?.partner || msg.sender;
+    if (!partnerForKey) throw new Error('No partner to derive shared key for decrypting message.');
+    const sharedKey = await getSharedKey(partnerForKey);
+    const plaintext = await decryptMessage(sharedKey, msg.ct, msg.iv);
+
     wrapper.innerHTML = `<div class="max-w-xs md:max-w-md lg:max-w-lg px-4 py-3 rounded-2xl ${isMe ? 'bg-indigo-600 text-white rounded-br-lg' : 'bg-gray-700 text-white rounded-bl-lg'}">
       <p>${escapeHtml(plaintext)}</p>
     </div>`;
@@ -1029,6 +1103,10 @@ async function renderMessageDOM(msg){
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }catch(e){
     console.error('renderMessageDOM decrypt error', e);
+    // show locked placeholder for messages we cannot decrypt
+    wrapper.innerHTML = `<div class="max-w-xs md:max-w-md px-4 py-3 rounded-2xl bg-gray-600 text-white">🔒 [Encrypted message - failed to decrypt]</div>`;
+    chatMessages.appendChild(wrapper);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 }
 
@@ -1044,7 +1122,8 @@ async function handleSendMessage(e){
   try{
     const sharedKey = await getSharedKey(app.currentChat.partner);
     const encrypted = await encryptMessage(sharedKey, text);
-    const msg = { sender: app.currentUser, ct: encrypted.ct, iv: encrypted.iv, timestamp: Date.now(), text: text };
+    // Do NOT include plaintext in the stored message
+    const msg = { sender: app.currentUser, ct: encrypted.ct, iv: encrypted.iv, timestamp: Date.now() };
     gun.get('chat').get(app.currentChat.id).set(msg);
     messageInput.value = '';
   }catch(err){
@@ -1103,15 +1182,23 @@ function applyTheme(theme){ const isLight = theme === 'light'; document.document
 // small peer check to warn user if peer down
 async function checkPeers() {
   if (!GUN_PEERS || !GUN_PEERS.length) return;
-  let ok = false;
+  let reachable = false;
   for (const p of GUN_PEERS) {
     try {
-      const root = p.replace('/gun','/');
-      const res = await fetch(root, { method: 'GET', mode: 'cors' });
-      if (res && (res.status === 200 || res.status === 204 || res.status === 0)) { ok = true; break; }
-    } catch(e){}
+      // try a simple GET to the peer root (keep CORS simple). Some peers won't respond to root — treat failures as unreachable.
+      const res = await fetch(p, { method: 'GET' });
+      if (res && (res.status >= 200 && res.status < 400)) { reachable = true; break; }
+    } catch(e){
+      console.warn('peer fetch failed for', p, e);
+    }
   }
-  if (!ok) showStatus('end-to-end encrypted.', true);
+  if (!reachable) {
+    console.warn('No reachable GUN peers found. Working in offline/local mode.');
+    showStatus('Peer unreachable — running in offline/local mode.', true);
+  } else {
+    // clear any prior peer warnings
+    showStatus('');
+  }
 }
 
 async function initApp(){
