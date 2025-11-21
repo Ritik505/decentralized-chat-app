@@ -4,6 +4,23 @@ import { checkUserExists, createUser } from '../services/gunService';
 import { encryptPrivateKey, decryptPrivateKey, generateKeys, exportKey, importPrivKey, importPubKey } from '../services/cryptoService';
 import { UserKeys } from '../types';
 import { Eye, EyeOff } from 'lucide-react';
+import { saveUserToCache, loadUserFromCache } from '../services/userCache';
+
+type StoredUserRecord = {
+  pubKey: JsonWebKey;
+  encryptedPrivKey: string;
+};
+
+const normalizeGunUser = (user: any): StoredUserRecord | null => {
+  if (!user || !user.pubKey || !user.privKey) return null;
+  try {
+    const pubKey = typeof user.pubKey === 'string' ? JSON.parse(user.pubKey) : user.pubKey;
+    return { pubKey, encryptedPrivKey: user.privKey };
+  } catch (error) {
+    console.warn('Failed to parse stored public key', error);
+    return null;
+  }
+};
 
 interface AuthProps {
   onLogin: (username: string, keys: UserKeys) => void;
@@ -28,35 +45,50 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     setLoading(true);
 
     try {
-      const existingUser = await checkUserExists(username);
+      const userFromGun = await checkUserExists(username);
+      let normalizedUser = normalizeGunUser(userFromGun);
 
       if (isLogin) {
         // Login Logic
-        if (!existingUser || !existingUser.privKey) {
+        if (!normalizedUser) {
+          const cachedUser = loadUserFromCache(username);
+          if (cachedUser) {
+            try {
+              createUser(username, cachedUser.pubKey, cachedUser.encryptedPrivKey);
+              normalizedUser = cachedUser;
+              setStatus({ msg: "Account restored from local backup.", error: false });
+            } catch (restoreErr) {
+              console.error("Failed to restore account from cache", restoreErr);
+            }
+          }
+        }
+
+        if (!normalizedUser) {
           setStatus({ msg: "Invalid username or password.", error: true });
           setLoading(false);
           return;
         }
 
-        const privJwk = decryptPrivateKey(existingUser.privKey, password);
+        const privJwk = decryptPrivateKey(normalizedUser.encryptedPrivKey, password);
         if (!privJwk) {
           setStatus({ msg: "Invalid username or password.", error: true });
           setLoading(false);
           return;
         }
 
-        const pubJwk = typeof existingUser.pubKey === 'string' ? JSON.parse(existingUser.pubKey) : existingUser.pubKey;
+        const pubJwk = normalizedUser.pubKey;
         
         const keys: UserKeys = {
           privateKey: await importPrivKey(privJwk),
           publicKey: await importPubKey(pubJwk)
         };
 
+        saveUserToCache(username, pubJwk, normalizedUser.encryptedPrivKey);
         onLogin(username, keys);
 
       } else {
         // Signup Logic
-        if (existingUser && (existingUser.pubKey || existingUser.privKey)) {
+        if (normalizedUser && (normalizedUser.pubKey || normalizedUser.encryptedPrivKey)) {
           setStatus({ msg: "Username already taken.", error: true });
           setLoading(false);
           return;
@@ -69,6 +101,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         const encryptedPriv = encryptPrivateKey(privJwk, password);
 
         createUser(username, pubJwk, encryptedPriv);
+        saveUserToCache(username, pubJwk, encryptedPriv);
         
         setStatus({ msg: "Signup successful! Please log in.", error: false });
         setIsLogin(true);
@@ -154,6 +187,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
              <p>© {new Date().getFullYear()} Ritik Verma. All rights reserved.</p>
            </div>
         )}
+
 
         {status && (
           <p className={`mt-4 text-center text-sm ${status.error ? 'text-red-400' : 'text-yellow-400'}`}>

@@ -1,7 +1,9 @@
 import { Contact } from '../types';
 
 const GUN_PEERS = [
-  'https://gun-peer-server.onrender.com/gun'
+  'https://gun-peer-server.onrender.com/gun',
+  'https://gun-manhattan.herokuapp.com/gun',
+  'https://relay.peer.estate/gun'
 ];
 
 // Initialize Gun. Prefer window.Gun if loaded via CDN to avoid build issues with certain bundlers
