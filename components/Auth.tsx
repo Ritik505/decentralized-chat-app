@@ -34,31 +34,73 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [status, setStatus] = useState<{ msg: string; error: boolean } | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Validate and sanitize username
+  const validateUsername = (username: string): { valid: boolean; error?: string } => {
+    if (!username || username.trim().length === 0) {
+      return { valid: false, error: "Username is required." };
+    }
+    const trimmed = username.trim();
+    if (trimmed.length < 3) {
+      return { valid: false, error: "Username must be at least 3 characters." };
+    }
+    if (trimmed.length > 20) {
+      return { valid: false, error: "Username must be 20 characters or less." };
+    }
+    // Allow alphanumeric, underscore, hyphen only
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+      return { valid: false, error: "Username can only contain letters, numbers, underscores, and hyphens." };
+    }
+    return { valid: true };
+  };
+
+  const validatePassword = (password: string): { valid: boolean; error?: string } => {
+    if (!password || password.length === 0) {
+      return { valid: false, error: "Password is required." };
+    }
+    if (password.length < 6) {
+      return { valid: false, error: "Password must be at least 6 characters." };
+    }
+    return { valid: true };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username || !password) {
-      setStatus({ msg: "Username and password are required.", error: true });
+    
+    const usernameValidation = validateUsername(username);
+    if (!usernameValidation.valid) {
+      setStatus({ msg: usernameValidation.error || "Invalid username.", error: true });
       return;
     }
+
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      setStatus({ msg: passwordValidation.error || "Invalid password.", error: true });
+      return;
+    }
+
+    const sanitizedUsername = username.trim();
     
     setStatus(null);
     setLoading(true);
 
     try {
-      const userFromGun = await checkUserExists(username);
+      const userFromGun = await checkUserExists(sanitizedUsername);
       let normalizedUser = normalizeGunUser(userFromGun);
 
       if (isLogin) {
         // Login Logic
         if (!normalizedUser) {
-          const cachedUser = loadUserFromCache(username);
+          const cachedUser = loadUserFromCache(sanitizedUsername);
           if (cachedUser) {
             try {
-              createUser(username, cachedUser.pubKey, cachedUser.encryptedPrivKey);
+              createUser(sanitizedUsername, cachedUser.pubKey, cachedUser.encryptedPrivKey);
               normalizedUser = cachedUser;
               setStatus({ msg: "Account restored from local backup.", error: false });
             } catch (restoreErr) {
               console.error("Failed to restore account from cache", restoreErr);
+              setStatus({ msg: "Failed to restore account. Please try again.", error: true });
+              setLoading(false);
+              return;
             }
           }
         }
@@ -83,8 +125,17 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           publicKey: await importPubKey(pubJwk)
         };
 
-        saveUserToCache(username, pubJwk, normalizedUser.encryptedPrivKey);
-        onLogin(username, keys);
+        try {
+          saveUserToCache(sanitizedUsername, pubJwk, normalizedUser.encryptedPrivKey);
+        } catch (cacheErr: any) {
+          // Handle quota exceeded or other storage errors
+          if (cacheErr?.name === 'QuotaExceededError') {
+            console.warn('Storage quota exceeded, continuing without cache');
+          } else {
+            console.warn('Failed to cache user data', cacheErr);
+          }
+        }
+        onLogin(sanitizedUsername, keys);
 
       } else {
         // Signup Logic
@@ -100,12 +151,29 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         const privJwk = await exportKey(kp.privateKey);
         const encryptedPriv = encryptPrivateKey(privJwk, password);
 
-        createUser(username, pubJwk, encryptedPriv);
-        saveUserToCache(username, pubJwk, encryptedPriv);
+        try {
+          createUser(sanitizedUsername, pubJwk, encryptedPriv);
+        } catch (createErr) {
+          console.error("Failed to create user", createErr);
+          setStatus({ msg: "Failed to create account. Please check your connection and try again.", error: true });
+          setLoading(false);
+          return;
+        }
+
+        try {
+          saveUserToCache(sanitizedUsername, pubJwk, encryptedPriv);
+        } catch (cacheErr: any) {
+          if (cacheErr?.name === 'QuotaExceededError') {
+            console.warn('Storage quota exceeded, account created but not cached');
+          } else {
+            console.warn('Failed to cache user data', cacheErr);
+          }
+        }
         
         setStatus({ msg: "Signup successful! Please log in.", error: false });
         setIsLogin(true);
         setPassword('');
+        setUsername('');
       }
     } catch (err) {
       console.error(err);

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { UserKeys, ChatSession, Contact, ChatMessage } from '../types';
-import { gun, createChatLink, fetchPartnerPubKey } from '../services/gunService';
+import { gun, createChatLink, fetchPartnerPubKey, restoreChatLinks } from '../services/gunService';
 import { deriveSharedKey, encryptMessage, decryptMessage, encryptFile, decryptFile } from '../services/cryptoService';
+import { saveContactsToCache, loadContactsFromCache } from '../services/userCache';
 import { LogOut, Plus, Smile, Paperclip, Send, Moon, Sun, MessageSquare, Menu, X, ArrowLeft, FileText, Image as ImageIcon } from 'lucide-react';
 
 interface ChatProps {
@@ -22,6 +23,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
   const [newChatStatus, setNewChatStatus] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   // Initialize theme from localStorage or default to true (Dark)
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -54,9 +56,19 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
     return sharedKey;
   }, [userKeys.privateKey]);
 
-  // Load Contacts
+  // Load Contacts - with cache restoration
   useEffect(() => {
     if (!gun) return;
+    
+    // First, try to restore contacts from cache immediately
+    const cachedContacts = loadContactsFromCache(currentUser);
+    if (cachedContacts && cachedContacts.length > 0) {
+      // Restore chat links to Gun (this ensures they persist on network)
+      restoreChatLinks(currentUser, cachedContacts);
+      // Add to state immediately so user sees their contacts right away
+      setContacts(cachedContacts);
+    }
+    
     const contactsRef = gun.get('users').get(currentUser).get('chats');
     
     const handleContact = (val: any) => {
@@ -70,18 +82,31 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
         const partner = chatId.split(':').find(n => n !== currentUser);
         if (partner) {
             setContacts(prev => {
-                if (prev.find(c => c.username === partner)) return prev;
-                return [{ username: partner, chatId: chatId! }, ...prev];
+                if (prev.find(c => c.username === partner || c.chatId === chatId)) return prev;
+                const newContact = { username: partner, chatId: chatId! };
+                const updated = [newContact, ...prev];
+                // Save to cache whenever a new contact is discovered
+                saveContactsToCache(currentUser, updated);
+                return updated;
             });
         }
     };
 
+    // Listen to Gun for any contacts that come from network
+    // This will merge with cached contacts (duplicates are prevented)
     contactsRef.map().on(handleContact);
     
     return () => {
         contactsRef.map().off();
     }
   }, [currentUser]);
+  
+  // Save contacts to cache whenever contacts change
+  useEffect(() => {
+    if (contacts.length > 0) {
+      saveContactsToCache(currentUser, contacts);
+    }
+  }, [contacts, currentUser]);
 
   // Listen to Messages
   useEffect(() => {
@@ -138,18 +163,33 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
         setShowEmoji(false);
     } catch (error) {
         console.error("Failed to send", error);
+        // Show user-friendly error
+        const errorMsg = error instanceof Error ? error.message : "Failed to send message. Please try again.";
+        setErrorMessage(errorMsg);
+        setTimeout(() => setErrorMessage(null), 3000);
     }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentChat) return;
-    // Simple max size guard (e.g. 5MB) to keep encrypted blobs manageable
+    
+    // File size validation (5MB max)
     const MAX_SIZE_BYTES = 5 * 1024 * 1024;
     if (file.size > MAX_SIZE_BYTES) {
-        alert('File too large. Please choose a file under 5MB.');
+        setErrorMessage('File too large. Please choose a file under 5MB.');
+        setTimeout(() => setErrorMessage(null), 3000);
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
+    }
+
+    // Basic file type validation - allow common safe types
+    // Allow any file type but warn for executables
+    const dangerousExtensions = ['.exe', '.bat', '.sh', '.scr', '.vbs', '.js', '.jar'];
+    const fileName = file.name.toLowerCase();
+    if (dangerousExtensions.some(ext => fileName.endsWith(ext))) {
+        setErrorMessage('Warning: Executable files are not recommended for security reasons.');
+        setTimeout(() => setErrorMessage(null), 4000);
     }
     
     try {
@@ -171,35 +211,57 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
         if(fileInputRef.current) fileInputRef.current.value = '';
     } catch (err) {
         console.error("Upload failed", err);
+        const errorMsg = err instanceof Error ? err.message : "Failed to upload file. Please try again.";
+        setErrorMessage(errorMsg);
+        setTimeout(() => setErrorMessage(null), 3000);
     }
   };
 
   const handleNewChatSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newChatUsername) return;
-    if (newChatUsername === currentUser) {
+    const trimmedUsername = newChatUsername.trim();
+    if (!trimmedUsername) {
+        setNewChatStatus("Please enter a username.");
+        return;
+    }
+    if (trimmedUsername === currentUser) {
         setNewChatStatus("You can't chat with yourself.");
+        return;
+    }
+    // Basic username validation
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmedUsername)) {
+        setNewChatStatus("Invalid username format.");
         return;
     }
     
     setNewChatStatus("Searching...");
-    const pubKey = await fetchPartnerPubKey(newChatUsername);
-    if (!pubKey) {
-        setNewChatStatus("User not found.");
-        return;
-    }
+    try {
+        const pubKey = await fetchPartnerPubKey(trimmedUsername);
+        if (!pubKey) {
+            setNewChatStatus("User not found. Please check the username and try again.");
+            return;
+        }
     
-    const chatId = createChatLink(currentUser, newChatUsername);
-    if (chatId) {
-        setContacts(prev => {
-             if (prev.find(c => c.username === newChatUsername)) return prev;
-             return [{ username: newChatUsername, chatId }, ...prev];
-        });
-        setCurrentChat({ partner: newChatUsername, id: chatId });
-        setShowNewChatModal(false);
-        setNewChatUsername('');
-        setNewChatStatus('');
-        setMobileSidebarOpen(false);
+        const chatId = createChatLink(currentUser, trimmedUsername);
+        if (chatId) {
+            setContacts(prev => {
+                 if (prev.find(c => c.username === trimmedUsername)) return prev;
+                 const updated = [{ username: trimmedUsername, chatId }, ...prev];
+                 // Save to cache immediately when creating new chat
+                 saveContactsToCache(currentUser, updated);
+                 return updated;
+            });
+            setCurrentChat({ partner: trimmedUsername, id: chatId });
+            setShowNewChatModal(false);
+            setNewChatUsername('');
+            setNewChatStatus('');
+            setMobileSidebarOpen(false);
+        } else {
+            setNewChatStatus("Failed to create chat. Please try again.");
+        }
+    } catch (err) {
+        console.error("Failed to create chat", err);
+        setNewChatStatus("An error occurred. Please try again.");
     }
   };
 
@@ -315,6 +377,13 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
                     ))}
                     <div ref={messagesEndRef} />
                 </div>
+
+                {/* Error Message */}
+                {errorMessage && (
+                    <div className="mx-4 mt-2 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+                        {errorMessage}
+                    </div>
+                )}
 
                 {/* Input Area */}
                 <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-700 bg-gray-850 relative z-20">

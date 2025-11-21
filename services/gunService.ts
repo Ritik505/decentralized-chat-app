@@ -74,10 +74,34 @@ export const checkUserExists = (username: string): Promise<any> => {
     return new Promise(resolve => gun.get('users').get(username).once(resolve, {wait: 1500}));
 }
 
+// Sanitize username for safe chatId generation
+const sanitizeForChatId = (username: string): string => {
+  // Remove any characters that could break chatId format
+  return username.replace(/[^a-zA-Z0-9_-]/g, '');
+};
+
 export const createChatLink = (currentUser: string, partnerUsername: string) => {
     if(!gun) return;
-    const chatId = [currentUser, partnerUsername].sort().join(':');
+    // Sanitize usernames to prevent injection issues
+    const safeCurrent = sanitizeForChatId(currentUser);
+    const safePartner = sanitizeForChatId(partnerUsername);
+    if (!safeCurrent || !safePartner) {
+      console.error('Invalid usernames for chat link creation');
+      return undefined;
+    }
+    const chatId = [safeCurrent, safePartner].sort().join(':');
     gun.get('users').get(currentUser).get('chats').set(chatId);
     gun.get('users').get(partnerUsername).get('chats').set(chatId);
     return chatId;
+}
+
+export const restoreChatLinks = (username: string, contacts: Array<{ username: string; chatId: string }>) => {
+    if(!gun || !contacts || contacts.length === 0) return;
+    const userChatsNode = gun.get('users').get(username).get('chats');
+    contacts.forEach(contact => {
+        userChatsNode.set(contact.chatId);
+        // Also ensure the partner has the link (in case they're restoring too)
+        const partnerChatsNode = gun.get('users').get(contact.username).get('chats');
+        partnerChatsNode.set(contact.chatId);
+    });
 }
