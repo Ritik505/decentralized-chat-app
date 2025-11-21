@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>D-Chat | Decentralized Chat</title>
+    <!-- Tailwind via CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -81,21 +82,12 @@
         display: none;
       }
     </style>
-    <!-- Gun.js and Crypto-JS CDNs for fallback/ease of use -->
+    <!-- Gun.js and Crypto-JS via CDN for decentralized storage & encryption helpers -->
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
-  <script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0"
-  }
-}
-</script>
-</head>
+  </head>
   <body class="h-full overflow-hidden text-gray-200 antialiased">
     <div id="root" class="h-full w-full"></div>
+  <script type="module" src="/index.tsx"></script>
 </body>
 </html>
