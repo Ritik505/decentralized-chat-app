@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { UserKeys, ChatSession, Contact, ChatMessage } from '../types';
 import { gun, createChatLink, fetchPartnerPubKey, restoreChatLinks } from '../services/gunService';
 import { deriveSharedKey, encryptMessage, decryptMessage, encryptFile, decryptFile } from '../services/cryptoService';
-import { saveContactsToCache, loadContactsFromCache } from '../services/userCache';
+import { saveContactsToCache, loadContactsFromCache, saveMessagesToCache, loadMessagesFromCache } from '../services/userCache';
 import { LogOut, Plus, Smile, Paperclip, Send, Moon, Sun, MessageSquare, Menu, X, ArrowLeft, FileText, Image as ImageIcon } from 'lucide-react';
 
 interface ChatProps {
@@ -108,12 +108,23 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
     }
   }, [contacts, currentUser]);
 
-  // Listen to Messages
+  // Listen to Messages - with cache restoration
   useEffect(() => {
     if (!currentChat || !gun) return;
     
     setMessages([]);
     renderedMessageKeys.current.clear();
+
+    // First, load cached messages immediately
+    const cachedMessages = loadMessagesFromCache(currentChat.id);
+    if (cachedMessages && cachedMessages.length > 0) {
+      // Add cached messages to state immediately
+      setMessages(cachedMessages);
+      // Mark their keys as rendered to avoid duplicates
+      cachedMessages.forEach(msg => {
+        if (msg._key) renderedMessageKeys.current.add(msg._key);
+      });
+    }
 
     const chatNode = gun.get('chat').get(currentChat.id);
     
@@ -126,16 +137,26 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
             const exists = prev.some(m => m._key === key);
             if (exists) return prev;
             const newState = [...prev, fullMsg].sort((a, b) => a.timestamp - b.timestamp);
+            // Save to cache whenever messages update
+            saveMessagesToCache(currentChat.id, newState);
             return newState;
         });
     };
 
+    // Listen to Gun for new messages
     chatNode.map().on(handleMessage);
     
     return () => {
         chatNode.map().off();
     };
   }, [currentChat]);
+  
+  // Save messages to cache whenever they change
+  useEffect(() => {
+    if (currentChat && messages.length > 0) {
+      saveMessagesToCache(currentChat.id, messages);
+    }
+  }, [messages, currentChat]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -159,6 +180,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
         };
         
         gun.get('chat').get(currentChat.id).set(msgPayload);
+        // Message will be added to state via Gun listener, which will trigger cache save
         setInputMsg('');
         setShowEmoji(false);
     } catch (error) {
@@ -208,6 +230,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
         };
         
         gun.get('chat').get(currentChat.id).set(fileMsg);
+        // File message will be added to state via Gun listener, which will trigger cache save
         if(fileInputRef.current) fileInputRef.current.value = '';
     } catch (err) {
         console.error("Upload failed", err);
