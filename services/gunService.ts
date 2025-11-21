@@ -8,13 +8,14 @@ const GUN_PEERS = [
 // interacting with the Gun npm package which can be finicky in strict ESM.
 const getGunInstance = () => {
   if (typeof window !== 'undefined' && window.Gun) {
-    return window.Gun({ peers: GUN_PEERS });
+    // Disable localStorage to avoid quota issues in the browser; data still lives on peers.
+    return window.Gun({ peers: GUN_PEERS, localStorage: false });
   }
   // Fallback if npm package was installed
   try {
     // @ts-ignore
     const Gun = require('gun/gun'); 
-    return Gun({ peers: GUN_PEERS });
+    return Gun({ peers: GUN_PEERS, localStorage: false });
   } catch (e) {
     console.error("Gun not found");
     return null;

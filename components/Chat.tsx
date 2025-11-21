@@ -89,17 +89,6 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
     
     setMessages([]);
     renderedMessageKeys.current.clear();
-    
-    // Load cache first
-    const cacheKey = `chatcache:${currentChat.id}`;
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-        try {
-            const parsed = JSON.parse(cached);
-            parsed.forEach((m: ChatMessage) => { if(m._key) renderedMessageKeys.current.add(m._key); });
-            setMessages(parsed);
-        } catch (e) {}
-    }
 
     const chatNode = gun.get('chat').get(currentChat.id);
     
@@ -108,13 +97,10 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
         renderedMessageKeys.current.add(key);
         
         const fullMsg: ChatMessage = { ...msg, _key: key };
-        
         setMessages(prev => {
             const exists = prev.some(m => m._key === key);
-            if(exists) return prev;
+            if (exists) return prev;
             const newState = [...prev, fullMsg].sort((a, b) => a.timestamp - b.timestamp);
-            // Update cache
-            localStorage.setItem(cacheKey, JSON.stringify(newState.slice(-200)));
             return newState;
         });
     };
@@ -158,6 +144,13 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, userKeys, onLogout }) =
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentChat) return;
+    // Simple max size guard (e.g. 5MB) to keep encrypted blobs manageable
+    const MAX_SIZE_BYTES = 5 * 1024 * 1024;
+    if (file.size > MAX_SIZE_BYTES) {
+        alert('File too large. Please choose a file under 5MB.');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+    }
     
     try {
         const sharedKey = await getSharedKey(currentChat.partner);
@@ -507,12 +500,14 @@ const MessageItem: React.FC<{
                          </div>
                          {msg.type?.startsWith('image/') && fileUrl ? (
                              <img src={fileUrl} alt={msg.name} className="rounded-lg max-h-60 object-cover bg-black/20" />
+                         ) : fileUrl ? (
+                             <a href={fileUrl} download={msg.name} className="text-sm underline hover:text-indigo-200">
+                                 Download File ({Math.round((msg.size || 0) / 1024)} KB)
+                             </a>
                          ) : (
-                             fileUrl && (
-                                 <a href={fileUrl} download={msg.name} className="text-sm underline hover:text-indigo-200">
-                                     Download File ({Math.round((msg.size || 0) / 1024)} KB)
-                                 </a>
-                             )
+                             <p className="text-xs opacity-70">
+                                 Encrypted file – cannot be opened with current keys.
+                             </p>
                          )}
                      </div>
                 ) : (
