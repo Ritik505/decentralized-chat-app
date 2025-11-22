@@ -1,5 +1,0 @@
-{
-  "name": "D-Chat",
-  "description": "A decentralized, end-to-end encrypted chat application using Gun.js and Web Crypto API.",
-  "requestFramePermissions": []
-}
